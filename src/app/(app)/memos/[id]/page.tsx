@@ -2,7 +2,16 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { format } from "date-fns";
 import { requireProfile } from "@/lib/auth";
-import { createClient } from "@/lib/supabase/server";
+import {
+  getMemoForUser,
+  listSteps,
+  listComments,
+  listAttachments,
+  listVersions,
+  profilesMap,
+  listDepartments,
+  listCategories,
+} from "@/lib/data";
 import { StatusBadge, PriorityBadge } from "@/components/status-badge";
 import { WorkflowActionPanel } from "@/components/workflow-action-panel";
 import { CommentBox } from "@/components/comment-box";
@@ -27,77 +36,62 @@ export default async function MemoDetailsPage({
   params: { id: string };
 }) {
   const profile = await requireProfile();
-  const supabase = await createClient();
-
-  const { data: memo } = await supabase
-    .from("memos")
-    .select(
-      `*,
-       author:profiles!memos_author_id_fkey(id, full_name, designation),
-       department:departments(name),
-       category:memo_categories(name)`
-    )
-    .eq("id", params.id)
-    .single();
+  const memo = await getMemoForUser(params.id, profile);
   if (!memo) notFound();
 
-  const [{ data: steps }, { data: comments }, { data: attachments }, { data: versions }] =
+  const [steps, comments, attachments, versions, people, departments, categories] =
     await Promise.all([
-      supabase
-        .from("workflow_instance_steps")
-        .select("*, assignee:profiles!workflow_instance_steps_assigned_user_id_fkey(full_name, designation), behalf:profiles!workflow_instance_steps_acted_on_behalf_of_fkey(full_name)")
-        .eq("memo_id", params.id)
-        .order("step_order"),
-      supabase
-        .from("comments")
-        .select("*, author:profiles!comments_author_id_fkey(full_name)")
-        .eq("memo_id", params.id)
-        .order("created_at"),
-      supabase
-        .from("attachments")
-        .select("*, uploader:profiles!attachments_uploaded_by_fkey(full_name)")
-        .eq("memo_id", params.id)
-        .order("created_at"),
-      supabase
-        .from("memo_versions")
-        .select("version_number, change_reason, created_at, editor:profiles!memo_versions_edited_by_fkey(full_name)")
-        .eq("memo_id", params.id)
-        .order("version_number"),
+      listSteps(memo.id),
+      listComments(memo.id),
+      listAttachments(memo.id),
+      listVersions(memo.id),
+      profilesMap(profile.orgId),
+      listDepartments(profile.orgId),
+      listCategories(profile.orgId),
     ]);
 
-  const currentStep = (steps ?? []).find((s) => s.status === "Active");
-  const isMyTurn = currentStep?.assigned_user_id === profile.id;
-  const isAuthor = memo.author_id === profile.id;
+  const name = (uid: string | null | undefined) =>
+    uid ? (people.get(uid)?.fullName ?? "Unknown") : "Unknown";
+  const designation = (uid: string) => people.get(uid)?.designation ?? null;
+  const deptName = memo.departmentId
+    ? departments.find((d) => d.id === memo.departmentId)?.name
+    : null;
+  const catName = memo.categoryId
+    ? categories.find((c) => c.id === memo.categoryId)?.name
+    : null;
+
+  const currentStep = steps.find((s) => s.status === "Active");
+  const isMyTurn = currentStep?.assignedUserId === profile.id;
+  const isAuthor = memo.authorId === profile.id;
   const canEdit =
     isAuthor && ["Draft", "Changes Requested"].includes(memo.status);
 
-  // Timeline: merge step actions + comments chronologically
   type TimelineEvent = { at: string; who: string; what: string; note?: string };
   const timeline: TimelineEvent[] = [];
   timeline.push({
-    at: memo.created_at,
-    who: memo.author?.full_name ?? "Author",
+    at: memo.createdAt,
+    who: name(memo.authorId),
     what: "created the memo",
   });
-  if (memo.submitted_at)
+  if (memo.submittedAt)
     timeline.push({
-      at: memo.submitted_at,
-      who: memo.author?.full_name ?? "Author",
+      at: memo.submittedAt,
+      who: name(memo.authorId),
       what: "submitted the memo",
     });
-  for (const v of versions ?? []) {
-    if (v.version_number > 1)
+  for (const v of versions) {
+    if (v.versionNumber > 1)
       timeline.push({
-        at: v.created_at,
-        who: (v.editor as { full_name?: string } | null)?.full_name ?? "Author",
-        what: `resubmitted (version ${v.version_number})`,
+        at: v.createdAt,
+        who: name(v.editedBy),
+        what: `resubmitted (version ${v.versionNumber})`,
       });
   }
-  for (const s of steps ?? []) {
-    if (s.acted_at)
+  for (const s of steps) {
+    if (s.actedAt)
       timeline.push({
-        at: s.acted_at,
-        who: s.assignee?.full_name ?? "Participant",
+        at: s.actedAt,
+        who: name(s.assignedUserId),
         what:
           s.status === "Approved"
             ? "approved"
@@ -109,11 +103,11 @@ export default async function MemoDetailsPage({
         note: s.comment ?? undefined,
       });
   }
-  for (const c of comments ?? []) {
-    if (c.comment_type === "general")
+  for (const c of comments) {
+    if (c.type === "general")
       timeline.push({
-        at: c.created_at,
-        who: c.author?.full_name ?? "User",
+        at: c.createdAt,
+        who: name(c.authorId),
         what: "commented",
         note: c.body,
       });
@@ -130,11 +124,11 @@ export default async function MemoDetailsPage({
             <PriorityBadge priority={memo.priority} />
           </div>
           <p className="mt-1 text-sm text-muted-foreground">
-            {memo.memo_number ?? "Draft (no number yet)"} · by{" "}
-            {memo.author?.full_name}
-            {memo.department?.name ? ` · ${memo.department.name}` : ""}
-            {memo.category?.name ? ` · ${memo.category.name}` : ""} ·{" "}
-            {format(new Date(memo.created_at), "PPp")}
+            {memo.memoNumber ?? "Draft (no number yet)"} · by{" "}
+            {name(memo.authorId)}
+            {deptName ? ` · ${deptName}` : ""}
+            {catName ? ` · ${catName}` : ""} ·{" "}
+            {format(new Date(memo.createdAt), "PPp")}
           </p>
         </div>
         <div className="flex gap-2">
@@ -145,7 +139,7 @@ export default async function MemoDetailsPage({
               </Button>
             </Link>
           )}
-          {memo.memo_number && (
+          {memo.memoNumber && (
             <a href={`/api/memos/${memo.id}/pdf`} target="_blank">
               <Button variant="outline">Export PDF</Button>
             </a>
@@ -155,7 +149,9 @@ export default async function MemoDetailsPage({
 
       {currentStep && (
         <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm">
-          <strong>Awaiting action from {currentStep.assignee?.full_name}</strong>
+          <strong>
+            Awaiting action from {name(currentStep.assignedUserId)}
+          </strong>
           {isMyTurn && " — it's your turn to act on this memo."}
         </div>
       )}
@@ -172,9 +168,7 @@ export default async function MemoDetailsPage({
             </CardContent>
           </Card>
 
-          {isMyTurn && (
-            <WorkflowActionPanel memoId={memo.id} />
-          )}
+          {isMyTurn && <WorkflowActionPanel memoId={memo.id} />}
 
           <Card>
             <CardHeader><CardTitle>Timeline</CardTitle></CardHeader>
@@ -202,35 +196,32 @@ export default async function MemoDetailsPage({
           <Card>
             <CardHeader><CardTitle>Comments</CardTitle></CardHeader>
             <CardContent className="space-y-4">
-              {(comments ?? []).length === 0 && (
+              {comments.length === 0 && (
                 <p className="text-sm text-muted-foreground">No comments yet.</p>
               )}
-              {(comments ?? []).map((c) => (
+              {comments.map((c) => (
                 <div key={c.id} className="rounded-md border p-3 text-sm">
                   <div className="mb-1 flex items-center justify-between">
-                    <strong>{c.author?.full_name}</strong>
+                    <strong>{name(c.authorId)}</strong>
                     <span className="text-xs text-muted-foreground">
-                      {c.comment_type !== "general" && (
+                      {c.type !== "general" && (
                         <span className={cn(
                           "mr-2 rounded px-1.5 py-0.5 text-xs",
-                          c.comment_type === "approval" && "bg-green-100 text-green-800",
-                          c.comment_type === "rejection" && "bg-red-100 text-red-800",
-                          c.comment_type === "change_request" && "bg-orange-100 text-orange-800",
+                          c.type === "approval" && "bg-green-100 text-green-800",
+                          c.type === "rejection" && "bg-red-100 text-red-800",
+                          c.type === "change_request" && "bg-orange-100 text-orange-800",
                         )}>
-                          {c.comment_type.replace("_", " ")}
+                          {c.type.replace("_", " ")}
                         </span>
                       )}
-                      {format(new Date(c.created_at), "PP p")}
+                      {format(new Date(c.createdAt), "PP p")}
                     </span>
                   </div>
                   <p>{c.body}</p>
                 </div>
               ))}
-              {(isAuthor ||
-                (steps ?? []).some((s) => s.assigned_user_id === profile.id)) &&
-                !["Draft"].includes(memo.status) && (
-                  <CommentBox memoId={memo.id} />
-                )}
+              {(isAuthor || memo.participantIds.includes(profile.id)) &&
+                memo.status !== "Draft" && <CommentBox memoId={memo.id} />}
             </CardContent>
           </Card>
         </div>
@@ -239,13 +230,13 @@ export default async function MemoDetailsPage({
           <Card>
             <CardHeader><CardTitle>Workflow</CardTitle></CardHeader>
             <CardContent>
-              {(steps ?? []).length === 0 ? (
+              {steps.length === 0 ? (
                 <p className="text-sm text-muted-foreground">
                   Not submitted yet — no workflow.
                 </p>
               ) : (
                 <ol className="space-y-3">
-                  {(steps ?? []).map((s) => (
+                  {steps.map((s) => (
                     <li key={s.id}
                       className={cn(
                         "rounded-md border p-3 text-sm",
@@ -253,16 +244,17 @@ export default async function MemoDetailsPage({
                       )}>
                       <div className="flex items-center gap-2">
                         <span>{stepIcon[s.status]}</span>
-                        <strong>{s.step_order}. {s.assignee?.full_name}</strong>
+                        <strong>{s.order}. {name(s.assignedUserId)}</strong>
                       </div>
                       <p className="text-xs text-muted-foreground">
-                        {s.assignee?.designation}
-                        {s.position_label ? ` · ${s.position_label}` : ""}
+                        {designation(s.assignedUserId)}
+                        {s.positionLabel ? ` · ${s.positionLabel}` : ""}
                       </p>
                       <p className="text-xs">
                         {s.status === "Active" ? "Current step" : s.status}
-                        {s.acted_at && ` · ${format(new Date(s.acted_at), "PP p")}`}
-                        {s.behalf && ` (on behalf of ${s.behalf.full_name})`}
+                        {s.actedAt && ` · ${format(new Date(s.actedAt), "PP p")}`}
+                        {s.actedOnBehalfOf &&
+                          ` (on behalf of ${name(s.actedOnBehalfOf)})`}
                       </p>
                     </li>
                   ))}
@@ -273,26 +265,25 @@ export default async function MemoDetailsPage({
 
           <AttachmentPanel
             memoId={memo.id}
-            attachments={(attachments ?? []).map((a) => ({
+            attachments={attachments.map((a) => ({
               id: a.id,
               filename: a.filename,
-              size_bytes: a.size_bytes,
-              created_at: a.created_at,
-              uploader: a.uploader?.full_name ?? "",
+              size_bytes: a.sizeBytes,
+              created_at: a.createdAt,
+              uploader: name(a.uploadedBy),
             }))}
-            canUpload={isAuthor && ["Draft", "Changes Requested"].includes(memo.status)}
+            canUpload={canEdit}
           />
 
-          {(versions ?? []).length > 1 && (
+          {versions.length > 1 && (
             <Card>
               <CardHeader><CardTitle>Versions</CardTitle></CardHeader>
               <CardContent>
                 <ul className="space-y-2 text-sm">
-                  {(versions ?? []).map((v) => (
-                    <li key={v.version_number}>
-                      <strong>v{v.version_number}</strong> —{" "}
-                      {(v.editor as { full_name?: string } | null)?.full_name} ·{" "}
-                      {format(new Date(v.created_at), "PP p")}
+                  {versions.map((v) => (
+                    <li key={v.versionNumber}>
+                      <strong>v{v.versionNumber}</strong> — {name(v.editedBy)} ·{" "}
+                      {format(new Date(v.createdAt), "PP p")}
                       <Separator className="mt-2" />
                     </li>
                   ))}

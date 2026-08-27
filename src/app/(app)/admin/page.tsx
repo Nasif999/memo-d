@@ -1,6 +1,13 @@
 import Link from "next/link";
 import { requireAdmin } from "@/lib/auth";
-import { createClient } from "@/lib/supabase/server";
+import {
+  getOrg,
+  listOrgProfiles,
+  listDepartments,
+  listOrgMemos,
+  listAudit,
+  profilesMap,
+} from "@/lib/data";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { OrgForm } from "@/components/admin/org-form";
 
@@ -17,33 +24,25 @@ function Stat({ label, value }: { label: string; value: number }) {
 
 export default async function AdminPage() {
   const admin = await requireAdmin();
-  const supabase = await createClient();
-
-  const [
-    { count: users },
-    { count: activeUsers },
-    { count: departments },
-    { count: memos },
-    { count: pending },
-    { count: approved },
-    { count: rejected },
-    { data: org },
-    { data: recentAudit },
-  ] = await Promise.all([
-    supabase.from("profiles").select("id", { count: "exact", head: true }),
-    supabase.from("profiles").select("id", { count: "exact", head: true }).eq("status", "active"),
-    supabase.from("departments").select("id", { count: "exact", head: true }).eq("is_active", true),
-    supabase.from("memos").select("id", { count: "exact", head: true }),
-    supabase.from("memos").select("id", { count: "exact", head: true })
-      .in("status", ["Submitted", "Pending Review", "Pending Approval"]),
-    supabase.from("memos").select("id", { count: "exact", head: true }).eq("status", "Approved"),
-    supabase.from("memos").select("id", { count: "exact", head: true }).eq("status", "Rejected"),
-    supabase.from("orgs").select("*").eq("id", admin.org_id).single(),
-    supabase.from("audit_log")
-      .select("id, event_type, description, created_at, actor:profiles!audit_log_actor_id_fkey(full_name)")
-      .order("created_at", { ascending: false })
-      .limit(8),
+  const [org, users, departments, memos, audit, people] = await Promise.all([
+    getOrg(admin.orgId),
+    listOrgProfiles(admin.orgId),
+    listDepartments(admin.orgId),
+    listOrgMemos(admin.orgId, admin),
+    listAudit(admin.orgId, 8),
+    profilesMap(admin.orgId),
   ]);
+
+  const pending = memos.filter((m) =>
+    ["Submitted", "Pending Review", "Pending Approval"].includes(m.status)
+  ).length;
+  const approved = memos.filter((m) => m.status === "Approved").length;
+  const rejected = memos.filter((m) => m.status === "Rejected").length;
+
+  const orgData = org as {
+    name?: string; identifier?: string;
+    contactEmail?: string | null; contactPhone?: string | null;
+  } | null;
 
   const sections = [
     { href: "/admin/users", label: "Users", desc: "Add, activate, and assign roles" },
@@ -59,13 +58,13 @@ export default async function AdminPage() {
       <h1 className="text-2xl font-bold">Administration</h1>
 
       <div className="grid grid-cols-2 gap-4 md:grid-cols-7">
-        <Stat label="Users" value={users ?? 0} />
-        <Stat label="Active users" value={activeUsers ?? 0} />
-        <Stat label="Departments" value={departments ?? 0} />
-        <Stat label="Memos" value={memos ?? 0} />
-        <Stat label="Pending" value={pending ?? 0} />
-        <Stat label="Approved" value={approved ?? 0} />
-        <Stat label="Rejected" value={rejected ?? 0} />
+        <Stat label="Users" value={users.length} />
+        <Stat label="Active users" value={users.filter((u) => u.status === "active").length} />
+        <Stat label="Departments" value={departments.filter((d) => d.isActive !== false).length} />
+        <Stat label="Memos" value={memos.length} />
+        <Stat label="Pending" value={pending} />
+        <Stat label="Approved" value={approved} />
+        <Stat label="Rejected" value={rejected} />
       </div>
 
       <div className="grid gap-4 md:grid-cols-3">
@@ -89,10 +88,10 @@ export default async function AdminPage() {
           <CardContent>
             <OrgForm
               org={{
-                name: org?.name ?? "",
-                identifier: org?.identifier ?? "",
-                contact_email: org?.contact_email ?? "",
-                contact_phone: org?.contact_phone ?? "",
+                name: orgData?.name ?? "",
+                identifier: orgData?.identifier ?? "",
+                contact_email: orgData?.contactEmail ?? "",
+                contact_phone: orgData?.contactPhone ?? "",
               }}
             />
           </CardContent>
@@ -102,10 +101,12 @@ export default async function AdminPage() {
           <CardHeader><CardTitle>Recent system activity</CardTitle></CardHeader>
           <CardContent>
             <ul className="space-y-2 text-sm">
-              {(recentAudit ?? []).map((a) => (
+              {audit.map((a) => (
                 <li key={a.id}>
-                  <strong>{(a.actor as unknown as { full_name: string } | null)?.full_name ?? "System"}</strong>{" "}
-                  — {a.event_type}
+                  <strong>
+                    {a.actorId ? (people.get(a.actorId)?.fullName ?? "Unknown") : "System"}
+                  </strong>{" "}
+                  — {a.eventType}
                   {a.description ? `: ${a.description.slice(0, 60)}` : ""}
                 </li>
               ))}

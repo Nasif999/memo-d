@@ -1,5 +1,5 @@
 import { requireAdmin } from "@/lib/auth";
-import { createClient } from "@/lib/supabase/server";
+import { listOrgMemos, listDepartments, listCategories } from "@/lib/data";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
@@ -13,20 +13,22 @@ export default async function AdminReportsPage({
 }: {
   searchParams: Record<string, string | undefined>;
 }) {
-  await requireAdmin();
-  const supabase = await createClient();
-
+  const admin = await requireAdmin();
   const from = searchParams.from ?? "";
   const to = searchParams.to ?? "";
 
-  let query = supabase
-    .from("memos")
-    .select("id, status, priority, submitted_at, completed_at, department:departments(name), category:memo_categories(name)");
-  if (from) query = query.gte("created_at", from);
-  if (to) query = query.lte("created_at", to + "T23:59:59");
-  const { data: memos } = await query;
+  const [memosAll, departments, categories] = await Promise.all([
+    listOrgMemos(admin.orgId, admin),
+    listDepartments(admin.orgId),
+    listCategories(admin.orgId),
+  ]);
+  const deptName = new Map(departments.map((d) => [d.id, d.name]));
+  const catName = new Map(categories.map((c) => [c.id, c.name]));
 
-  const all = memos ?? [];
+  let all = memosAll;
+  if (from) all = all.filter((m) => m.createdAt >= from);
+  if (to) all = all.filter((m) => m.createdAt <= to + "T23:59:59");
+
   const byStatus = new Map<string, number>();
   const byDept = new Map<string, number>();
   const byCategory = new Map<string, number>();
@@ -36,13 +38,13 @@ export default async function AdminReportsPage({
 
   for (const m of all) {
     byStatus.set(m.status, (byStatus.get(m.status) ?? 0) + 1);
-    const dept = (m.department as unknown as { name: string } | null)?.name ?? "Unassigned";
+    const dept = m.departmentId ? (deptName.get(m.departmentId) ?? "Unknown") : "Unassigned";
     byDept.set(dept, (byDept.get(dept) ?? 0) + 1);
-    const cat = (m.category as unknown as { name: string } | null)?.name ?? "Uncategorized";
+    const cat = m.categoryId ? (catName.get(m.categoryId) ?? "Unknown") : "Uncategorized";
     byCategory.set(cat, (byCategory.get(cat) ?? 0) + 1);
     if (m.priority === "Urgent") urgent++;
-    if (m.completed_at && m.submitted_at) {
-      completionMs += new Date(m.completed_at).getTime() - new Date(m.submitted_at).getTime();
+    if (m.completedAt && m.submittedAt) {
+      completionMs += new Date(m.completedAt).getTime() - new Date(m.submittedAt).getTime();
       completedCount++;
     }
   }

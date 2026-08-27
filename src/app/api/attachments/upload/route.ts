@@ -1,5 +1,10 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { FieldValue } from "firebase-admin/firestore";
+import { db, bucket } from "@/lib/firebase/admin";
+import { getSessionProfile } from "@/lib/auth";
+import { logAudit } from "@/lib/data";
+
+export const runtime = "nodejs";
 
 const MAX_SIZE = 10 * 1024 * 1024;
 const ALLOWED_TYPES = new Set([
@@ -15,11 +20,8 @@ const ALLOWED_TYPES = new Set([
 ]);
 
 export async function POST(request: Request) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const profile = await getSessionProfile();
+  if (!profile) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const form = await request.formData();
   const file = form.get("file");
@@ -34,14 +36,13 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "File type not allowed" }, { status: 400 });
   }
 
-  // RLS-scoped fetch: only returns the memo if the caller may see it.
-  const { data: memo } = await supabase
-    .from("memos")
-    .select("id, org_id, author_id, status")
-    .eq("id", memoId)
-    .single();
-  if (!memo) return NextResponse.json({ error: "Memo not found" }, { status: 404 });
-  if (memo.author_id !== user.id) {
+  const memoSnap = await db().collection("memos").doc(memoId).get();
+  const memo = memoSnap.data();
+  // Tenant + ownership + state checks — server-side only.
+  if (!memo || memo.orgId !== profile.orgId) {
+    return NextResponse.json({ error: "Memo not found" }, { status: 404 });
+  }
+  if (memo.authorId !== profile.id) {
     return NextResponse.json({ error: "Only the author can attach files" }, { status: 403 });
   }
   if (!["Draft", "Changes Requested"].includes(memo.status)) {
@@ -52,29 +53,27 @@ export async function POST(request: Request) {
   }
 
   const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 120);
-  const path = `${memo.org_id}/${memo.id}/${crypto.randomUUID()}-${safeName}`;
+  const path = `attachments/${memo.orgId}/${memoId}/${crypto.randomUUID()}-${safeName}`;
 
-  const { error: uploadError } = await supabase.storage
-    .from("attachments")
-    .upload(path, file, { contentType: file.type });
-  if (uploadError) {
+  try {
+    const buffer = Buffer.from(await file.arrayBuffer());
+    await bucket().file(path).save(buffer, {
+      contentType: file.type,
+      resumable: false,
+    });
+  } catch {
     return NextResponse.json({ error: "Upload failed" }, { status: 500 });
   }
 
-  const { error: insertError } = await supabase.from("attachments").insert({
-    memo_id: memo.id,
-    org_id: memo.org_id,
-    storage_path: path,
+  await db().collection("memos").doc(memoId).collection("attachments").add({
+    storagePath: path,
     filename: file.name,
-    size_bytes: file.size,
-    mime_type: file.type,
-    uploaded_by: user.id,
+    sizeBytes: file.size,
+    mimeType: file.type,
+    uploadedBy: profile.id,
+    createdAt: FieldValue.serverTimestamp(),
   });
-  if (insertError) {
-    await supabase.storage.from("attachments").remove([path]);
-    return NextResponse.json({ error: "Could not record attachment" }, { status: 500 });
-  }
 
-  await supabase.rpc("log_auth_event", { p_event: "attachment_upload" });
+  await logAudit(profile.orgId, profile.id, "attachment_upload", "memo", memoId, file.name);
   return NextResponse.json({ ok: true });
 }

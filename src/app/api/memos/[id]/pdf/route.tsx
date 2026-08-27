@@ -1,7 +1,17 @@
 import { NextResponse } from "next/server";
 import { renderToBuffer, Document, Page, Text, View, StyleSheet } from "@react-pdf/renderer";
 import { format } from "date-fns";
-import { createClient } from "@/lib/supabase/server";
+import { getSessionProfile } from "@/lib/auth";
+import {
+  getMemoForUser,
+  getOrg,
+  listSteps,
+  listComments,
+  listAttachments,
+  profilesMap,
+  listDepartments,
+  listCategories,
+} from "@/lib/data";
 
 export const runtime = "nodejs";
 
@@ -36,45 +46,36 @@ export async function GET(
   _request: Request,
   { params }: { params: { id: string } }
 ) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const profile = await getSessionProfile();
+  if (!profile) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  // All queries below run under the caller's RLS — cross-org access returns nothing.
-  const { data: memo } = await supabase
-    .from("memos")
-    .select(
-      `*,
-       author:profiles!memos_author_id_fkey(full_name, designation),
-       department:departments(name),
-       category:memo_categories(name),
-       org:orgs(name, identifier, contact_email)`
-    )
-    .eq("id", params.id)
-    .single();
+  // Tenant + visibility check happens in getMemoForUser.
+  const memo = await getMemoForUser(params.id, profile);
   if (!memo) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  const [{ data: steps }, { data: comments }, { data: attachments }] =
+  const [org, steps, comments, attachments, people, departments, categories] =
     await Promise.all([
-      supabase
-        .from("workflow_instance_steps")
-        .select("*, assignee:profiles!workflow_instance_steps_assigned_user_id_fkey(full_name, designation)")
-        .eq("memo_id", params.id)
-        .order("step_order"),
-      supabase
-        .from("comments")
-        .select("*, author:profiles!comments_author_id_fkey(full_name)")
-        .eq("memo_id", params.id)
-        .order("created_at"),
-      supabase
-        .from("attachments")
-        .select("filename, size_bytes")
-        .eq("memo_id", params.id),
+      getOrg(memo.orgId),
+      listSteps(memo.id),
+      listComments(memo.id),
+      listAttachments(memo.id),
+      profilesMap(memo.orgId),
+      listDepartments(memo.orgId),
+      listCategories(memo.orgId),
     ]);
 
-  const org = memo.org as unknown as { name: string; identifier: string; contact_email: string | null };
+  const orgData = org as {
+    name?: string; identifier?: string; contactEmail?: string | null;
+  } | null;
+  const name = (uid: string | null | undefined) =>
+    uid ? (people.get(uid)?.fullName ?? "Unknown") : "Unknown";
+  const deptName = memo.departmentId
+    ? departments.find((d) => d.id === memo.departmentId)?.name
+    : null;
+  const catName = memo.categoryId
+    ? categories.find((c) => c.id === memo.categoryId)?.name
+    : null;
+
   const finalStatus =
     memo.status === "Approved" ? "APPROVED"
     : memo.status === "Rejected" ? "REJECTED"
@@ -88,9 +89,10 @@ export async function GET(
   const pdf = (
     <Document>
       <Page size="A4" style={styles.page}>
-        <Text style={styles.orgName}>{org?.name}</Text>
+        <Text style={styles.orgName}>{orgData?.name}</Text>
         <Text style={styles.meta}>
-          {org?.identifier}{org?.contact_email ? ` · ${org.contact_email}` : ""}
+          {orgData?.identifier}
+          {orgData?.contactEmail ? ` · ${orgData.contactEmail}` : ""}
         </Text>
 
         <Text style={styles.title}>{memo.subject}</Text>
@@ -98,21 +100,19 @@ export async function GET(
         <View style={styles.section}>
           <View style={styles.row}>
             <Text style={styles.label}>Memo Number</Text>
-            <Text>{memo.memo_number ?? "—"}</Text>
+            <Text>{memo.memoNumber ?? "—"}</Text>
           </View>
           <View style={styles.row}>
             <Text style={styles.label}>Author</Text>
-            <Text>
-              {(memo.author as { full_name: string; designation: string | null } | null)?.full_name}
-            </Text>
+            <Text>{name(memo.authorId)}</Text>
           </View>
           <View style={styles.row}>
             <Text style={styles.label}>Department</Text>
-            <Text>{(memo.department as { name: string } | null)?.name ?? "—"}</Text>
+            <Text>{deptName ?? "—"}</Text>
           </View>
           <View style={styles.row}>
             <Text style={styles.label}>Category</Text>
-            <Text>{(memo.category as { name: string } | null)?.name ?? "—"}</Text>
+            <Text>{catName ?? "—"}</Text>
           </View>
           <View style={styles.row}>
             <Text style={styles.label}>Priority</Text>
@@ -120,7 +120,7 @@ export async function GET(
           </View>
           <View style={styles.row}>
             <Text style={styles.label}>Date</Text>
-            <Text>{format(new Date(memo.created_at), "PPP")}</Text>
+            <Text>{format(new Date(memo.createdAt), "PPP")}</Text>
           </View>
           <View style={styles.row}>
             <Text style={styles.label}>Status</Text>
@@ -133,12 +133,12 @@ export async function GET(
           <Text style={styles.body}>{stripHtml(memo.body)}</Text>
         </View>
 
-        {(attachments ?? []).length > 0 && (
+        {attachments.length > 0 && (
           <View style={styles.section}>
             <Text style={styles.heading}>Attachments</Text>
-            {(attachments ?? []).map((a, i) => (
+            {attachments.map((a, i) => (
               <Text key={i} style={styles.item}>
-                • {a.filename} ({Math.round(a.size_bytes / 1024)} KB)
+                • {a.filename} ({Math.round(a.sizeBytes / 1024)} KB)
               </Text>
             ))}
           </View>
@@ -146,27 +146,25 @@ export async function GET(
 
         <View style={styles.section}>
           <Text style={styles.heading}>Workflow & Approval History</Text>
-          {(steps ?? []).map((s) => (
+          {steps.map((s) => (
             <Text key={s.id} style={styles.item}>
-              {s.step_order}. {(s.assignee as { full_name: string; designation: string | null } | null)?.full_name}
-              {(s.assignee as { designation: string | null } | null)?.designation
-                ? ` (${(s.assignee as { designation: string | null }).designation})` : ""}
+              {s.order}. {name(s.assignedUserId)}
               {" — "}
               {s.status === "Active" ? "Pending (current step)" : s.status}
-              {s.acted_at ? ` on ${format(new Date(s.acted_at), "PP p")}` : ""}
+              {s.actedAt ? ` on ${format(new Date(s.actedAt), "PP p")}` : ""}
               {s.comment ? ` — "${s.comment}"` : ""}
+              {s.actedOnBehalfOf ? ` (on behalf of ${name(s.actedOnBehalfOf)})` : ""}
             </Text>
           ))}
         </View>
 
-        {(comments ?? []).length > 0 && (
+        {comments.length > 0 && (
           <View style={styles.section}>
             <Text style={styles.heading}>Comments</Text>
-            {(comments ?? []).map((c) => (
+            {comments.map((c) => (
               <Text key={c.id} style={styles.item}>
-                {(c.author as { full_name: string } | null)?.full_name} (
-                {c.comment_type.replace("_", " ")},{" "}
-                {format(new Date(c.created_at), "PP p")}): {c.body}
+                {name(c.authorId)} ({c.type.replace("_", " ")},{" "}
+                {format(new Date(c.createdAt), "PP p")}): {c.body}
               </Text>
             ))}
           </View>
@@ -183,7 +181,7 @@ export async function GET(
   return new NextResponse(new Uint8Array(buffer), {
     headers: {
       "Content-Type": "application/pdf",
-      "Content-Disposition": `inline; filename="${memo.memo_number ?? "memo"}.pdf"`,
+      "Content-Disposition": `inline; filename="${memo.memoNumber ?? "memo"}.pdf"`,
     },
   });
 }

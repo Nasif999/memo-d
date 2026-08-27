@@ -9,29 +9,35 @@ PDF export. Built for CSE226 (Foundations of Vibe Coding), North South Universit
 | Layer | Technology |
 |---|---|
 | Frontend + backend | Next.js 14 (App Router, TypeScript, Server Actions) |
-| Database | Supabase Postgres with Row Level Security (RLS) |
-| Authentication | Supabase Auth (email + password) |
-| File storage | Supabase Storage (private bucket, signed URLs) |
+| Database | Cloud Firestore (via Firebase Admin SDK, server-side only) |
+| Authentication | Firebase Authentication (email + password, session cookies) |
+| File storage | Firebase Storage (private bucket, signed URLs) |
 | UI | Tailwind CSS + shadcn/ui + Tiptap rich text editor |
 | PDF export | @react-pdf/renderer |
 | Hosting | Vercel |
 
 ## Multi-Tenancy & Security Model
 
-- Every tenant-scoped table carries an `org_id` column.
-- Postgres **Row Level Security** enforces org isolation on every table —
-  a user can never read or write another organization's rows, regardless of
-  application bugs.
-- Workflow "is it your turn" logic runs inside `SECURITY DEFINER` Postgres
-  functions (`submit_memo`, `perform_workflow_action`) that re-validate the
-  caller against the active workflow step atomically.
-- All mutations go through Server Actions / Route Handlers with server-side
-  session validation. UI hiding is never the authorization boundary.
-- Attachments live in a **private** bucket; downloads require an RLS-checked
-  route that issues a 60-second signed URL.
-- Passwords are hashed by Supabase Auth (bcrypt). HTTPS via Vercel.
-- Comments and audit logs have no UPDATE/DELETE policies — immutable by
-  construction.
+- **The browser never touches Firestore or Storage.** All data access runs
+  server-side through the Firebase Admin SDK after verifying the caller's
+  httpOnly session cookie. Firestore and Storage security rules **deny all
+  client access** (`firestore.rules`, `storage.rules`) — a leaked web API key
+  gives an attacker nothing.
+- Every tenant-scoped document carries an `orgId`; every server-side read/write
+  filters or checks it against the verified caller's org. Cross-org requests
+  return "not found."
+- Workflow "is it your turn" logic runs inside **Firestore transactions**
+  (`submitMemoTx`, `performWorkflowActionTx` in `src/lib/data.ts`) that
+  atomically re-validate the caller against the active workflow step.
+- Login flow: client Firebase Auth sign-in → ID token → exchanged at
+  `/api/auth/session` for an httpOnly, `secure`, `sameSite` session cookie.
+  Deactivated accounts cannot establish sessions and existing refresh tokens
+  are revoked on deactivation.
+- Attachments live in a private bucket; downloads require a server-side access
+  check that issues a 60-second signed URL.
+- Passwords are hashed and managed by Firebase Auth. HTTPS via Vercel.
+- Comments and audit log entries are written once and never updated or deleted
+  by user-reachable code paths.
 
 ## Local Setup
 
@@ -39,7 +45,7 @@ PDF export. Built for CSE226 (Foundations of Vibe Coding), North South Universit
 
 - Node.js 18+ (tested on 24)
 - npm 9+
-- A free [Supabase](https://supabase.com) account
+- A free [Firebase](https://console.firebase.google.com) project
 - (optional) [Vercel](https://vercel.com) account for deployment
 
 ### 2. Install dependencies
@@ -48,13 +54,17 @@ PDF export. Built for CSE226 (Foundations of Vibe Coding), North South Universit
 npm install
 ```
 
-### 3. Create the Supabase project
+### 3. Create and configure the Firebase project
 
-1. Create a new project at https://supabase.com/dashboard.
-2. Open the **SQL Editor** and run the three migration files **in order**:
-   1. `supabase/migrations/0001_init_schema.sql` — tables, indexes, RLS policies
-   2. `supabase/migrations/0002_workflow_functions.sql` — workflow engine functions
-   3. `supabase/migrations/0003_storage_and_seed.sql` — private storage bucket + demo data
+1. Create a project at https://console.firebase.google.com.
+2. **Authentication → Sign-in method**: enable **Email/Password**.
+3. **Firestore Database**: create a database (production mode). Publish the
+   contents of `firestore.rules` (deny-all) as the rules.
+4. **Storage**: create the default bucket. Publish `storage.rules` (deny-all).
+5. **Project settings → General → Your apps**: add a Web app and note the
+   `apiKey`, `authDomain`, `projectId`.
+6. **Project settings → Service accounts**: Generate new private key
+   (downloads a JSON file).
 
 ### 4. Configure environment variables
 
@@ -62,15 +72,23 @@ npm install
 cp .env.example .env.local
 ```
 
-Fill in from Supabase **Project Settings → API**:
-
 | Variable | Value |
 |---|---|
-| `NEXT_PUBLIC_SUPABASE_URL` | Project URL |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | `anon` public key |
-| `SUPABASE_SERVICE_ROLE_KEY` | `service_role` secret key (server-only) |
+| `NEXT_PUBLIC_FIREBASE_API_KEY` | Web app `apiKey` |
+| `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN` | Web app `authDomain` |
+| `NEXT_PUBLIC_FIREBASE_PROJECT_ID` | Web app `projectId` |
+| `FIREBASE_SERVICE_ACCOUNT_JSON` | The **entire** service-account JSON, as one line |
+| `FIREBASE_STORAGE_BUCKET` | Bucket name, e.g. `your-project.firebasestorage.app` |
 
-### 5. Run locally
+### 5. Seed demo data
+
+```bash
+node scripts/seed.mjs
+```
+
+Creates two organizations, departments, categories, and demo users.
+
+### 6. Run locally
 
 ```bash
 npm run dev
@@ -78,7 +96,7 @@ npm run dev
 
 Open http://localhost:3000.
 
-### 6. Production build
+### 7. Production build
 
 ```bash
 npm run build && npm start
@@ -87,7 +105,8 @@ npm run build && npm start
 ## Deployment (Vercel)
 
 1. Push this repo to GitHub.
-2. Import it in Vercel and set the three environment variables above.
+2. Import it in Vercel and set the five environment variables above
+   (paste the service-account JSON as a single line).
 3. Deploy — no other configuration needed.
 
 ## Demo Accounts (seeded)
@@ -106,7 +125,7 @@ All demo accounts use password **`Passw0rd!`**.
 
 **Tenant-isolation demo:** create a memo as `bob@acme.example`, then log in as
 `henry@globex.example` — the memo is invisible in every list, search, and by
-direct URL (RLS returns no rows).
+direct URL (the server's org check returns "not found").
 
 **Workflow demo:** as Bob, create a memo with workflow Carol → Dave → Erin,
 submit it, then log in as each participant in turn and approve / reject /
@@ -115,7 +134,9 @@ request changes. The timeline, notifications, and audit log update at every step
 ## Known Limitations
 
 - Email notifications not implemented (in-app notification center only).
-- Delegation is data-model + workflow-function supported (a delegate can act on
-  behalf of an assignee and both identities are recorded) but has no management UI.
+- Delegation is supported by the workflow engine (a delegate can act on behalf
+  of an assignee and both identities are recorded) but has no management UI.
 - Version history shows metadata; side-by-side content diff not implemented.
 - Reports are tabular counts; no charts or CSV export.
+- Search is server-side substring matching over org-scoped data (fine at demo
+  scale; a dedicated search index would be needed for large datasets).

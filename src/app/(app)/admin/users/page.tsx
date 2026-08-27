@@ -1,25 +1,28 @@
 import { requireAdmin } from "@/lib/auth";
-import { createClient } from "@/lib/supabase/server";
+import { listOrgProfiles, listDepartments } from "@/lib/data";
 import { UsersAdmin } from "@/components/admin/users-admin";
 
 export default async function AdminUsersPage() {
   const admin = await requireAdmin();
-  const supabase = await createClient();
-
-  const [{ data: users }, { data: departments }] = await Promise.all([
-    supabase
-      .from("profiles")
-      .select("id, full_name, email, designation, role, status, department_id")
-      .order("full_name"),
-    supabase.from("departments").select("id, name").eq("is_active", true).order("name"),
+  const [users, departments] = await Promise.all([
+    listOrgProfiles(admin.orgId),
+    listDepartments(admin.orgId),
   ]);
 
   return (
     <div className="space-y-4">
       <h1 className="text-2xl font-bold">Users</h1>
       <UsersAdmin
-        users={users ?? []}
-        departments={departments ?? []}
+        users={users.map((u) => ({
+          id: u.id,
+          full_name: u.fullName,
+          email: u.email,
+          designation: u.designation,
+          role: u.role,
+          status: u.status,
+          department_id: u.departmentId,
+        }))}
+        departments={departments.filter((d) => d.isActive !== false)}
         selfId={admin.id}
       />
     </div>

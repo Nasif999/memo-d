@@ -3,7 +3,9 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { createClient } from "@/lib/supabase/client";
+import { updatePassword } from "firebase/auth";
+import { firebaseAuth } from "@/lib/firebase/client";
+import { updateOwnProfile } from "@/app/(app)/profile/actions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -30,15 +32,12 @@ export function ProfileForm({
 
   async function saveProfile() {
     setBusy(true);
-    const supabase = createClient();
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
-    const { error } = await supabase
-      .from("profiles")
-      .update({ full_name: fullName.trim(), designation: designation.trim() || null })
-      .eq("id", user.id);
+    const res = await updateOwnProfile({
+      full_name: fullName,
+      designation,
+    });
     setBusy(false);
-    if (error) return toast.error("Could not update profile.");
+    if (res.error) return toast.error(res.error);
     toast.success("Profile updated");
     router.refresh();
   }
@@ -46,13 +45,25 @@ export function ProfileForm({
   async function changePassword() {
     if (newPassword.length < 8)
       return toast.error("Password must be at least 8 characters.");
+    const user = firebaseAuth().currentUser;
+    if (!user) {
+      return toast.error(
+        "Please sign out and sign back in, then change your password."
+      );
+    }
     setBusy(true);
-    const supabase = createClient();
-    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    try {
+      await updatePassword(user, newPassword);
+      toast.success("Password changed");
+      setNewPassword("");
+    } catch (e) {
+      toast.error(
+        e instanceof Error && e.message.includes("requires-recent-login")
+          ? "Please sign out and sign back in, then change your password."
+          : "Could not change password."
+      );
+    }
     setBusy(false);
-    if (error) return toast.error(error.message);
-    toast.success("Password changed");
-    setNewPassword("");
   }
 
   return (

@@ -1,19 +1,16 @@
 import { format } from "date-fns";
 import { requireAdmin } from "@/lib/auth";
-import { createClient } from "@/lib/supabase/server";
+import { listAudit, profilesMap } from "@/lib/data";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 
 export default async function AuditLogPage() {
-  await requireAdmin();
-  const supabase = await createClient();
-
-  const { data: entries } = await supabase
-    .from("audit_log")
-    .select("id, event_type, entity_type, description, created_at, actor:profiles!audit_log_actor_id_fkey(full_name, email)")
-    .order("created_at", { ascending: false })
-    .limit(200);
+  const admin = await requireAdmin();
+  const [entries, people] = await Promise.all([
+    listAudit(admin.orgId, 200),
+    profilesMap(admin.orgId),
+  ]);
 
   return (
     <div className="space-y-4">
@@ -33,22 +30,21 @@ export default async function AuditLogPage() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {(entries ?? []).map((e) => {
-              const actor = e.actor as unknown as { full_name: string; email: string } | null;
-              return (
-                <TableRow key={e.id}>
-                  <TableCell className="whitespace-nowrap text-sm">
-                    {format(new Date(e.created_at), "PP p")}
-                  </TableCell>
-                  <TableCell>{actor?.full_name ?? "System"}</TableCell>
-                  <TableCell className="font-mono text-xs">{e.event_type}</TableCell>
-                  <TableCell>{e.entity_type ?? "—"}</TableCell>
-                  <TableCell className="max-w-md truncate text-sm">
-                    {e.description ?? "—"}
-                  </TableCell>
-                </TableRow>
-              );
-            })}
+            {entries.map((e) => (
+              <TableRow key={e.id}>
+                <TableCell className="whitespace-nowrap text-sm">
+                  {format(new Date(e.createdAt), "PP p")}
+                </TableCell>
+                <TableCell>
+                  {e.actorId ? (people.get(e.actorId)?.fullName ?? "Unknown") : "System"}
+                </TableCell>
+                <TableCell className="font-mono text-xs">{e.eventType}</TableCell>
+                <TableCell>{e.entityType ?? "—"}</TableCell>
+                <TableCell className="max-w-md truncate text-sm">
+                  {e.description ?? "—"}
+                </TableCell>
+              </TableRow>
+            ))}
           </TableBody>
         </Table>
       </div>

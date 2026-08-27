@@ -1,15 +1,11 @@
 import { requireAdmin } from "@/lib/auth";
-import { createClient } from "@/lib/supabase/server";
+import { listDepartments } from "@/lib/data";
 import { SimpleCrud } from "@/components/admin/simple-crud";
 import { upsertDepartment, setDepartmentActive } from "../actions";
 
 export default async function AdminDepartmentsPage() {
-  await requireAdmin();
-  const supabase = await createClient();
-  const { data: departments } = await supabase
-    .from("departments")
-    .select("id, name, description, is_active")
-    .order("name");
+  const admin = await requireAdmin();
+  const departments = await listDepartments(admin.orgId);
 
   return (
     <div className="space-y-4">
@@ -19,7 +15,12 @@ export default async function AdminDepartmentsPage() {
       </p>
       <SimpleCrud
         title="Department"
-        items={departments ?? []}
+        items={departments.map((d) => ({
+          id: d.id,
+          name: d.name,
+          description: d.description ?? null,
+          is_active: d.isActive !== false,
+        }))}
         onSave={upsertDepartment}
         onToggle={setDepartmentActive}
       />

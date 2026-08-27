@@ -1,14 +1,10 @@
 import { requireAdmin } from "@/lib/auth";
-import { createClient } from "@/lib/supabase/server";
+import { listTemplates } from "@/lib/data";
 import { TemplatesAdmin } from "@/components/admin/templates-admin";
 
 export default async function AdminTemplatesPage() {
-  await requireAdmin();
-  const supabase = await createClient();
-  const { data: templates } = await supabase
-    .from("workflow_templates")
-    .select("id, name, description, is_active, workflow_template_steps(step_order, position_label)")
-    .order("name");
+  const admin = await requireAdmin();
+  const templates = await listTemplates(admin.orgId);
 
   return (
     <div className="space-y-4">
@@ -17,14 +13,14 @@ export default async function AdminTemplatesPage() {
         Reusable ordered approval sequences (e.g. Employee → Dept Head → Finance → Director).
       </p>
       <TemplatesAdmin
-        templates={(templates ?? []).map((t) => ({
+        templates={templates.map((t) => ({
           id: t.id,
           name: t.name,
-          description: t.description,
-          is_active: t.is_active,
-          steps: (t.workflow_template_steps ?? [])
-            .sort((a, b) => a.step_order - b.step_order)
-            .map((s) => s.position_label),
+          description: t.description ?? null,
+          is_active: t.isActive !== false,
+          steps: (t.steps ?? [])
+            .sort((a, b) => a.order - b.order)
+            .map((s) => s.label),
         }))}
       />
     </div>

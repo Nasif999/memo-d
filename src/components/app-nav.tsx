@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
-import { createClient } from "@/lib/supabase/client";
+import { signOut } from "firebase/auth";
+import { firebaseAuth } from "@/lib/firebase/client";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
@@ -31,9 +32,8 @@ export function AppNav({
   const [menuOpen, setMenuOpen] = useState(false);
 
   async function handleLogout() {
-    const supabase = createClient();
-    await supabase.rpc("log_auth_event", { p_event: "user_logout" });
-    await supabase.auth.signOut();
+    await fetch("/api/auth/session", { method: "DELETE" });
+    await signOut(firebaseAuth()).catch(() => {});
     router.push("/login");
     router.refresh();
   }

@@ -1,6 +1,12 @@
 import Link from "next/link";
 import { requireProfile } from "@/lib/auth";
-import { createClient } from "@/lib/supabase/server";
+import {
+  listInboxMemos,
+  listMemosByAuthor,
+  listOrgMemos,
+  profilesMap,
+  listDepartments,
+} from "@/lib/data";
 import { MemoTable, type MemoRow } from "@/components/memo-table";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -18,68 +24,49 @@ function Stat({ label, value }: { label: string; value: number | string }) {
 
 export default async function DashboardPage() {
   const profile = await requireProfile();
-  const supabase = await createClient();
-
-  const [
-    { data: myActiveSteps },
-    { data: myMemos },
-    { count: urgentCount },
-    { data: recentActivity },
-  ] = await Promise.all([
-    supabase
-      .from("workflow_instance_steps")
-      .select(
-        `memo:memos!workflow_instance_steps_memo_id_fkey(
-          id, memo_number, subject, status, priority, created_at, submitted_at,
-          author:profiles!memos_author_id_fkey(full_name),
-          department:departments(name))`
-      )
-      .eq("assigned_user_id", profile.id)
-      .eq("status", "Active"),
-    supabase
-      .from("memos")
-      .select("id, status")
-      .eq("author_id", profile.id),
-    supabase
-      .from("memos")
-      .select("id", { count: "exact", head: true })
-      .eq("priority", "Urgent")
-      .in("status", ["Pending Approval", "Pending Review", "Submitted"]),
-    supabase
-      .from("comments")
-      .select("id, body, created_at, comment_type, author:profiles!comments_author_id_fkey(full_name), memo:memos!comments_memo_id_fkey(id, subject)")
-      .order("created_at", { ascending: false })
-      .limit(5),
+  const [inbox, mine, orgMemos, people, departments] = await Promise.all([
+    listInboxMemos(profile.id, profile.orgId),
+    listMemosByAuthor(profile.id, profile.orgId),
+    listOrgMemos(profile.orgId, profile),
+    profilesMap(profile.orgId),
+    listDepartments(profile.orgId),
   ]);
+  const deptName = new Map(departments.map((d) => [d.id, d.name]));
 
-  const awaiting: MemoRow[] = (myActiveSteps ?? [])
-    .map((s) => s.memo as unknown as {
-      id: string; memo_number: string | null; subject: string; status: string;
-      priority: string; created_at: string; submitted_at: string | null;
-      author: { full_name: string } | null; department: { name: string } | null;
-    } | null)
-    .filter((m): m is NonNullable<typeof m> => !!m)
-    .map((m) => ({
-      id: m.id, memo_number: m.memo_number, subject: m.subject,
-      status: m.status, priority: m.priority, created_at: m.created_at,
-      submitted_at: m.submitted_at, author_name: m.author?.full_name,
-      department_name: m.department?.name,
-    }));
+  const awaiting: MemoRow[] = inbox.map((m) => ({
+    id: m.id,
+    memo_number: m.memoNumber,
+    subject: m.subject,
+    status: m.status,
+    priority: m.priority,
+    created_at: m.createdAt,
+    submitted_at: m.submittedAt,
+    author_name: people.get(m.authorId)?.fullName,
+    department_name: m.departmentId ? deptName.get(m.departmentId) : undefined,
+  }));
 
-  const mine = myMemos ?? [];
   const counts = {
     submitted: mine.filter((m) =>
-      ["Submitted", "Pending Review", "Pending Approval"].includes(m.status)).length,
+      ["Submitted", "Pending Review", "Pending Approval"].includes(m.status)
+    ).length,
     changes: mine.filter((m) => m.status === "Changes Requested").length,
     approved: mine.filter((m) => m.status === "Approved").length,
-    rejected: mine.filter((m) => m.status === "Rejected").length,
   };
+  const urgentCount = orgMemos.filter(
+    (m) =>
+      m.priority === "Urgent" &&
+      ["Pending Approval", "Pending Review", "Submitted"].includes(m.status)
+  ).length;
+
+  const recentCompleted = orgMemos
+    .filter((m) => ["Approved", "Rejected"].includes(m.status))
+    .slice(0, 5);
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">
-          Welcome, {profile.full_name.split(" ")[0]}
+          Welcome, {profile.fullName.split(" ")[0]}
         </h1>
         <Link href="/memos/new"><Button>+ New Memo</Button></Link>
       </div>
@@ -89,7 +76,7 @@ export default async function DashboardPage() {
         <Stat label="My memos in progress" value={counts.submitted} />
         <Stat label="Changes requested" value={counts.changes} />
         <Stat label="Approved" value={counts.approved} />
-        <Stat label="Urgent (org-wide)" value={urgentCount ?? 0} />
+        <Stat label="Urgent (org-wide)" value={urgentCount} />
       </div>
 
       <div>
@@ -99,27 +86,22 @@ export default async function DashboardPage() {
       </div>
 
       <Card>
-        <CardHeader><CardTitle>Recent activity</CardTitle></CardHeader>
+        <CardHeader><CardTitle>Recently completed</CardTitle></CardHeader>
         <CardContent>
-          {(recentActivity ?? []).length === 0 ? (
-            <p className="text-sm text-muted-foreground">No recent activity.</p>
+          {recentCompleted.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              No completed memos yet.
+            </p>
           ) : (
             <ul className="space-y-2 text-sm">
-              {(recentActivity ?? []).map((c) => {
-                const memo = c.memo as unknown as { id: string; subject: string } | null;
-                const author = c.author as unknown as { full_name: string } | null;
-                return (
-                  <li key={c.id}>
-                    <strong>{author?.full_name}</strong>{" "}
-                    {c.comment_type === "general" ? "commented on" : `${c.comment_type.replace("_", " ")} —`}{" "}
-                    {memo ? (
-                      <Link href={`/memos/${memo.id}`} className="underline">
-                        {memo.subject}
-                      </Link>
-                    ) : "a memo"}
-                  </li>
-                );
-              })}
+              {recentCompleted.map((m) => (
+                <li key={m.id}>
+                  <Link href={`/memos/${m.id}`} className="underline">
+                    {m.subject}
+                  </Link>{" "}
+                  — {m.status} · by {people.get(m.authorId)?.fullName}
+                </li>
+              ))}
             </ul>
           )}
         </CardContent>

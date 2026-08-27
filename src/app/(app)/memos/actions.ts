@@ -3,14 +3,23 @@
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+import { FieldValue } from "firebase-admin/firestore";
+import { db } from "@/lib/firebase/admin";
 import { requireProfile } from "@/lib/auth";
+import {
+  submitMemoTx,
+  performWorkflowActionTx,
+  addGeneralComment,
+  cancelMemoTx,
+  logAudit,
+  type WorkflowAction,
+} from "@/lib/data";
 
 const memoSchema = z.object({
   subject: z.string().trim().min(1).max(300),
   body: z.string().max(200_000),
-  department_id: z.string().uuid().nullable(),
-  category_id: z.string().uuid().nullable(),
+  department_id: z.string().nullable(),
+  category_id: z.string().nullable(),
   priority: z.enum(["Normal", "High", "Urgent"]),
 });
 
@@ -20,58 +29,75 @@ export async function saveDraft(input: MemoInput, memoId?: string) {
   const profile = await requireProfile();
   const parsed = memoSchema.safeParse(input);
   if (!parsed.success) return { error: "Invalid memo data." };
-  const supabase = await createClient();
+  const data = {
+    subject: parsed.data.subject,
+    body: parsed.data.body,
+    departmentId: parsed.data.department_id || null,
+    categoryId: parsed.data.category_id || null,
+    priority: parsed.data.priority,
+  };
 
   if (memoId) {
-    const { error } = await supabase
-      .from("memos")
-      .update(parsed.data)
-      .eq("id", memoId)
-      .eq("author_id", profile.id);
-    if (error) return { error: "Could not update draft." };
+    const ref = db().collection("memos").doc(memoId);
+    const snap = await ref.get();
+    const memo = snap.data();
+    // Server-side ownership + state check — only the author edits, only in editable states.
+    if (
+      !memo ||
+      memo.orgId !== profile.orgId ||
+      memo.authorId !== profile.id ||
+      !["Draft", "Changes Requested"].includes(memo.status)
+    ) {
+      return { error: "Could not update draft." };
+    }
+    await ref.update({ ...data, updatedAt: FieldValue.serverTimestamp() });
     revalidatePath(`/memos/${memoId}`);
     return { id: memoId };
   }
 
-  const { data, error } = await supabase
-    .from("memos")
-    .insert({
-      ...parsed.data,
-      org_id: profile.org_id,
-      author_id: profile.id,
-      status: "Draft",
-    })
-    .select("id")
-    .single();
-  if (error || !data) return { error: "Could not save draft." };
+  const ref = await db().collection("memos").add({
+    ...data,
+    orgId: profile.orgId,
+    authorId: profile.id,
+    status: "Draft",
+    memoNumber: null,
+    currentStepOrder: null,
+    currentAssigneeId: null,
+    participantIds: [],
+    currentVersion: 1,
+    submittedAt: null,
+    completedAt: null,
+    createdAt: FieldValue.serverTimestamp(),
+    updatedAt: FieldValue.serverTimestamp(),
+  });
+  await logAudit(profile.orgId, profile.id, "memo_created", "memo", ref.id, data.subject);
   revalidatePath("/memos");
-  return { id: data.id };
+  return { id: ref.id };
 }
 
 export async function deleteDraft(memoId: string) {
   const profile = await requireProfile();
-  const supabase = await createClient();
-  const { error } = await supabase
-    .from("memos")
-    .delete()
-    .eq("id", memoId)
-    .eq("author_id", profile.id)
-    .eq("status", "Draft");
-  if (error) return { error: "Could not delete draft." };
+  const ref = db().collection("memos").doc(memoId);
+  const snap = await ref.get();
+  const memo = snap.data();
+  if (
+    !memo ||
+    memo.orgId !== profile.orgId ||
+    memo.authorId !== profile.id ||
+    memo.status !== "Draft"
+  ) {
+    return { error: "Could not delete draft." };
+  }
+  await db().recursiveDelete(ref);
   revalidatePath("/memos");
   redirect("/memos");
 }
 
 export async function submitMemo(memoId: string, participantIds: string[]) {
-  await requireProfile();
-  const ids = z.array(z.string().uuid()).min(0).parse(participantIds);
-  const supabase = await createClient();
-  // submit_memo re-validates author, status, org, and participant validity in SQL.
-  const { error } = await supabase.rpc("submit_memo", {
-    p_memo_id: memoId,
-    p_participants: ids.length ? ids : null,
-  });
-  if (error) return { error: error.message };
+  const profile = await requireProfile();
+  const ids = z.array(z.string().min(1)).parse(participantIds);
+  const res = await submitMemoTx(memoId, profile, ids);
+  if (res.error) return { error: res.error };
   revalidatePath(`/memos/${memoId}`);
   revalidatePath("/memos");
   revalidatePath("/inbox");
@@ -80,42 +106,36 @@ export async function submitMemo(memoId: string, participantIds: string[]) {
 
 export async function performAction(
   memoId: string,
-  action: "approve" | "reject" | "request_changes" | "comment",
+  action: WorkflowAction,
   comment: string
 ) {
-  await requireProfile();
-  const supabase = await createClient();
-  // perform_workflow_action enforces "is it your turn" atomically in SQL.
-  const { error } = await supabase.rpc("perform_workflow_action", {
-    p_memo_id: memoId,
-    p_action: action,
-    p_comment: comment.trim() || null,
-  });
-  if (error) return { error: error.message };
+  const profile = await requireProfile();
+  const res = await performWorkflowActionTx(
+    memoId,
+    profile,
+    action,
+    comment.trim() || null
+  );
+  if (res.error) return { error: res.error };
   revalidatePath(`/memos/${memoId}`);
   revalidatePath("/inbox");
   return { ok: true };
 }
 
 export async function addComment(memoId: string, body: string) {
-  await requireProfile();
+  const profile = await requireProfile();
   const text = z.string().trim().min(1).max(10_000).safeParse(body);
   if (!text.success) return { error: "Comment text required." };
-  const supabase = await createClient();
-  const { error } = await supabase.rpc("add_memo_comment", {
-    p_memo_id: memoId,
-    p_body: text.data,
-  });
-  if (error) return { error: error.message };
+  const res = await addGeneralComment(memoId, profile, text.data);
+  if (res.error) return { error: res.error };
   revalidatePath(`/memos/${memoId}`);
   return { ok: true };
 }
 
 export async function cancelMemo(memoId: string) {
-  await requireProfile();
-  const supabase = await createClient();
-  const { error } = await supabase.rpc("cancel_memo", { p_memo_id: memoId });
-  if (error) return { error: error.message };
+  const profile = await requireProfile();
+  const res = await cancelMemoTx(memoId, profile);
+  if (res.error) return { error: res.error };
   revalidatePath(`/memos/${memoId}`);
   revalidatePath("/memos");
   return { ok: true };

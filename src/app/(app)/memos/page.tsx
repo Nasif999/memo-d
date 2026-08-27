@@ -1,38 +1,31 @@
 import Link from "next/link";
 import { requireProfile } from "@/lib/auth";
-import { createClient } from "@/lib/supabase/server";
+import { listMemosByAuthor, profilesMap, listDepartments } from "@/lib/data";
 import { MemoTable, type MemoRow } from "@/components/memo-table";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 export default async function MyMemosPage() {
   const profile = await requireProfile();
-  const supabase = await createClient();
+  const [memos, people, departments] = await Promise.all([
+    listMemosByAuthor(profile.id, profile.orgId),
+    profilesMap(profile.orgId),
+    listDepartments(profile.orgId),
+  ]);
+  const deptName = new Map(departments.map((d) => [d.id, d.name]));
 
-  const { data: memos } = await supabase
-    .from("memos")
-    .select(
-      `id, memo_number, subject, status, priority, created_at, submitted_at,
-       department:departments(name),
-       current_step:workflow_instance_steps!memos_current_step_fk(
-         assignee:profiles!workflow_instance_steps_assigned_user_id_fkey(full_name)
-       )`
-    )
-    .eq("author_id", profile.id)
-    .order("created_at", { ascending: false });
-
-  const rows: MemoRow[] = (memos ?? []).map((m) => ({
+  const rows: MemoRow[] = memos.map((m) => ({
     id: m.id,
-    memo_number: m.memo_number,
+    memo_number: m.memoNumber,
     subject: m.subject,
     status: m.status,
     priority: m.priority,
-    created_at: m.created_at,
-    submitted_at: m.submitted_at,
-    department_name: (m.department as unknown as { name: string } | null)?.name,
-    current_participant: (
-      m.current_step as unknown as { assignee: { full_name: string } | null } | null
-    )?.assignee?.full_name,
+    created_at: m.createdAt,
+    submitted_at: m.submittedAt,
+    department_name: m.departmentId ? deptName.get(m.departmentId) : undefined,
+    current_participant: m.currentAssigneeId
+      ? people.get(m.currentAssigneeId)?.fullName
+      : undefined,
   }));
 
   const drafts = rows.filter((r) => r.status === "Draft");

@@ -1,45 +1,44 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { db, bucket } from "@/lib/firebase/admin";
+import { getSessionProfile } from "@/lib/auth";
+import { getMemoForUser } from "@/lib/data";
 
-// Issues a short-lived signed URL after an RLS-scoped access check.
+export const runtime = "nodejs";
+
+// Issues a short-lived signed URL after a server-side access check.
 // The bucket is private — this route is the only way to reach a file.
+// URL shape: /api/attachments/{attachmentId}/download?memo={memoId}
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: { id: string } }
 ) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const profile = await getSessionProfile();
+  if (!profile) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  // RLS on attachments + memos guarantees this only returns rows the
-  // caller's org/authorization permits.
-  const { data: attachment } = await supabase
-    .from("attachments")
-    .select("storage_path, filename, memo_id")
-    .eq("id", params.id)
-    .single();
-  if (!attachment) {
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
-  }
-  // Confirm the memo itself is visible to this caller (drafts stay author-only).
-  const { data: memo } = await supabase
-    .from("memos")
-    .select("id")
-    .eq("id", attachment.memo_id)
-    .single();
-  if (!memo) {
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
-  }
+  const memoId = new URL(request.url).searchParams.get("memo");
+  if (!memoId) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  const { data: signed, error } = await supabase.storage
-    .from("attachments")
-    .createSignedUrl(attachment.storage_path, 60, {
-      download: attachment.filename,
-    });
-  if (error || !signed) {
+  // Tenant + visibility check: only memos the caller may see.
+  const memo = await getMemoForUser(memoId, profile);
+  if (!memo) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+  const attSnap = await db()
+    .collection("memos").doc(memoId)
+    .collection("attachments").doc(params.id)
+    .get();
+  const attachment = attSnap.data();
+  if (!attachment) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+  try {
+    const [signedUrl] = await bucket()
+      .file(attachment.storagePath)
+      .getSignedUrl({
+        action: "read",
+        expires: Date.now() + 60_000,
+        responseDisposition: `attachment; filename="${attachment.filename}"`,
+      });
+    return NextResponse.redirect(signedUrl);
+  } catch {
     return NextResponse.json({ error: "Could not sign URL" }, { status: 500 });
   }
-  return NextResponse.redirect(signed.signedUrl);
 }

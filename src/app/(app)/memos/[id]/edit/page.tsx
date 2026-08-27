@@ -1,6 +1,12 @@
 import { notFound, redirect } from "next/navigation";
 import { requireProfile } from "@/lib/auth";
-import { createClient } from "@/lib/supabase/server";
+import {
+  getMemoForUser,
+  listDepartments,
+  listCategories,
+  listOrgProfiles,
+  listTemplates,
+} from "@/lib/data";
 import { MemoForm } from "@/components/memo-form";
 
 export default async function EditMemoPage({
@@ -9,30 +15,19 @@ export default async function EditMemoPage({
   params: { id: string };
 }) {
   const profile = await requireProfile();
-  const supabase = await createClient();
-
-  const { data: memo } = await supabase
-    .from("memos")
-    .select("*")
-    .eq("id", params.id)
-    .single();
+  const memo = await getMemoForUser(params.id, profile);
   if (!memo) notFound();
   // Only the author may edit, and only in editable states.
-  if (memo.author_id !== profile.id) redirect(`/memos/${params.id}`);
+  if (memo.authorId !== profile.id) redirect(`/memos/${params.id}`);
   if (!["Draft", "Changes Requested"].includes(memo.status))
     redirect(`/memos/${params.id}`);
 
-  const [{ data: departments }, { data: categories }, { data: users }, { data: templates }] =
-    await Promise.all([
-      supabase.from("departments").select("id, name").eq("is_active", true).order("name"),
-      supabase.from("memo_categories").select("id, name").eq("is_active", true).order("name"),
-      supabase.from("profiles").select("id, full_name, designation").eq("status", "active").order("full_name"),
-      supabase
-        .from("workflow_templates")
-        .select("id, name, workflow_template_steps(step_order, position_label)")
-        .eq("is_active", true)
-        .order("name"),
-    ]);
+  const [departments, categories, users, templates] = await Promise.all([
+    listDepartments(profile.orgId),
+    listCategories(profile.orgId),
+    listOrgProfiles(profile.orgId),
+    listTemplates(profile.orgId),
+  ]);
 
   return (
     <div className="space-y-6">
@@ -40,23 +35,31 @@ export default async function EditMemoPage({
         {memo.status === "Changes Requested" ? "Revise Memo" : "Edit Draft"}
       </h1>
       <MemoForm
-        departments={departments ?? []}
-        categories={categories ?? []}
-        users={users ?? []}
-        templates={(templates ?? []).map((t) => ({
-          id: t.id,
-          name: t.name,
-          steps: (t.workflow_template_steps ?? []).sort(
-            (a, b) => a.step_order - b.step_order
-          ),
-        }))}
+        departments={departments.filter((d) => d.isActive !== false)}
+        categories={categories.filter((c) => c.isActive !== false)}
+        users={users
+          .filter((u) => u.status === "active")
+          .map((u) => ({
+            id: u.id,
+            full_name: u.fullName,
+            designation: u.designation,
+          }))}
+        templates={templates
+          .filter((t) => t.isActive !== false)
+          .map((t) => ({
+            id: t.id,
+            name: t.name,
+            steps: (t.steps ?? [])
+              .sort((a, b) => a.order - b.order)
+              .map((s) => ({ step_order: s.order, position_label: s.label })),
+          }))}
         currentUserId={profile.id}
         existing={{
           id: memo.id,
           subject: memo.subject,
           body: memo.body,
-          department_id: memo.department_id,
-          category_id: memo.category_id,
+          department_id: memo.departmentId,
+          category_id: memo.categoryId,
           priority: memo.priority,
           status: memo.status,
         }}

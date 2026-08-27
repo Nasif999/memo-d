@@ -64,7 +64,7 @@ export function AttachmentPanel({
           {attachments.map((a) => (
             <li key={a.id} className="rounded-md border p-2">
               <a
-                href={`/api/attachments/${a.id}/download`}
+                href={`/api/attachments/${a.id}/download?memo=${memoId}`}
                 className="font-medium underline"
               >
                 {a.filename}
