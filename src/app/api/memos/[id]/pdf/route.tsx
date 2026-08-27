@@ -8,6 +8,7 @@ import {
   listSteps,
   listComments,
   listAttachments,
+  listEvents,
   profilesMap,
   listDepartments,
   listCategories,
@@ -53,20 +54,18 @@ export async function GET(
   const memo = await getMemoForUser(params.id, profile);
   if (!memo) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  const [org, steps, comments, attachments, people, departments, categories] =
+  const [org, steps, comments, attachments, events, people, departments, categories] =
     await Promise.all([
       getOrg(memo.orgId),
       listSteps(memo.id),
       listComments(memo.id),
       listAttachments(memo.id),
+      listEvents(memo.id),
       profilesMap(memo.orgId),
       listDepartments(memo.orgId),
       listCategories(memo.orgId),
     ]);
 
-  const orgData = org as {
-    name?: string; identifier?: string; contactEmail?: string | null;
-  } | null;
   const name = (uid: string | null | undefined) =>
     uid ? (people.get(uid)?.fullName ?? "Unknown") : "Unknown";
   const deptName = memo.departmentId
@@ -89,10 +88,10 @@ export async function GET(
   const pdf = (
     <Document>
       <Page size="A4" style={styles.page}>
-        <Text style={styles.orgName}>{orgData?.name}</Text>
+        <Text style={styles.orgName}>{org?.name}</Text>
         <Text style={styles.meta}>
-          {orgData?.identifier}
-          {orgData?.contactEmail ? ` · ${orgData.contactEmail}` : ""}
+          {org?.identifier}
+          {org?.contactEmail ? ` · ${org.contactEmail}` : ""}
         </Text>
 
         <Text style={styles.title}>{memo.subject}</Text>
@@ -145,15 +144,26 @@ export async function GET(
         )}
 
         <View style={styles.section}>
-          <Text style={styles.heading}>Workflow & Approval History</Text>
+          <Text style={styles.heading}>Workflow Participants</Text>
           {steps.map((s) => (
             <Text key={s.id} style={styles.item}>
               {s.order}. {name(s.assignedUserId)}
               {" — "}
               {s.status === "Active" ? "Pending (current step)" : s.status}
               {s.actedAt ? ` on ${format(new Date(s.actedAt), "PP p")}` : ""}
-              {s.comment ? ` — "${s.comment}"` : ""}
-              {s.actedOnBehalfOf ? ` (on behalf of ${name(s.actedOnBehalfOf)})` : ""}
+            </Text>
+          ))}
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.heading}>Approval History</Text>
+          {events.map((e) => (
+            <Text key={e.id} style={styles.item}>
+              {format(new Date(e.createdAt), "PP p")} — {name(e.actorId)}
+              {e.onBehalfOf ? ` (on behalf of ${name(e.onBehalfOf)})` : ""}{" "}
+              {e.action}
+              {e.versionNumber ? ` (version ${e.versionNumber})` : ""}
+              {e.comment ? ` — "${e.comment}"` : ""}
             </Text>
           ))}
         </View>

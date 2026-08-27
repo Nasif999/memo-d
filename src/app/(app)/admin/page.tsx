@@ -39,11 +39,6 @@ export default async function AdminPage() {
   const approved = memos.filter((m) => m.status === "Approved").length;
   const rejected = memos.filter((m) => m.status === "Rejected").length;
 
-  const orgData = org as {
-    name?: string; identifier?: string;
-    contactEmail?: string | null; contactPhone?: string | null;
-  } | null;
-
   const sections = [
     { href: "/admin/users", label: "Users", desc: "Add, activate, and assign roles" },
     { href: "/admin/departments", label: "Departments", desc: "Manage org departments" },
@@ -88,10 +83,10 @@ export default async function AdminPage() {
           <CardContent>
             <OrgForm
               org={{
-                name: orgData?.name ?? "",
-                identifier: orgData?.identifier ?? "",
-                contact_email: orgData?.contactEmail ?? "",
-                contact_phone: orgData?.contactPhone ?? "",
+                name: org?.name ?? "",
+                identifier: org?.identifier ?? "",
+                contact_email: org?.contactEmail ?? "",
+                contact_phone: org?.contactPhone ?? "",
               }}
             />
           </CardContent>

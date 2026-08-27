@@ -22,7 +22,7 @@ export default async function AppLayout({
           role: profile.role,
           designation: profile.designation,
         }}
-        orgName={(org as { name?: string } | null)?.name ?? ""}
+        orgName={org?.name ?? ""}
         unreadCount={unread}
       />
       <main className="mx-auto max-w-7xl p-4 md:p-6">{children}</main>

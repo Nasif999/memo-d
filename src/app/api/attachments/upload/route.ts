@@ -56,8 +56,19 @@ export async function POST(request: Request) {
   const path = `attachments/${memo.orgId}/${memoId}/${crypto.randomUUID()}-${safeName}`;
 
   try {
+    const store = bucket();
+    const [bucketExists] = await store.exists();
+    if (!bucketExists) {
+      return NextResponse.json(
+        {
+          error:
+            "File storage is not configured for this deployment. Enable Firebase Storage and set FIREBASE_STORAGE_BUCKET.",
+        },
+        { status: 503 }
+      );
+    }
     const buffer = Buffer.from(await file.arrayBuffer());
-    await bucket().file(path).save(buffer, {
+    await store.file(path).save(buffer, {
       contentType: file.type,
       resumable: false,
     });

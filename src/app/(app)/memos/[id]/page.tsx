@@ -8,6 +8,7 @@ import {
   listComments,
   listAttachments,
   listVersions,
+  listEvents,
   profilesMap,
   listDepartments,
   listCategories,
@@ -39,12 +40,13 @@ export default async function MemoDetailsPage({
   const memo = await getMemoForUser(params.id, profile);
   if (!memo) notFound();
 
-  const [steps, comments, attachments, versions, people, departments, categories] =
+  const [steps, comments, attachments, versions, events, people, departments, categories] =
     await Promise.all([
       listSteps(memo.id),
       listComments(memo.id),
       listAttachments(memo.id),
       listVersions(memo.id),
+      listEvents(memo.id),
       profilesMap(profile.orgId),
       listDepartments(profile.orgId),
       listCategories(profile.orgId),
@@ -66,53 +68,29 @@ export default async function MemoDetailsPage({
   const canEdit =
     isAuthor && ["Draft", "Changes Requested"].includes(memo.status);
 
+  // Built from the append-only event log so decisions from earlier submission
+  // rounds survive the step reset that a resubmission performs.
   type TimelineEvent = { at: string; who: string; what: string; note?: string };
-  const timeline: TimelineEvent[] = [];
-  timeline.push({
-    at: memo.createdAt,
-    who: name(memo.authorId),
-    what: "created the memo",
-  });
-  if (memo.submittedAt)
-    timeline.push({
-      at: memo.submittedAt,
+  const timeline: TimelineEvent[] = [
+    {
+      at: memo.createdAt,
       who: name(memo.authorId),
-      what: "submitted the memo",
-    });
-  for (const v of versions) {
-    if (v.versionNumber > 1)
-      timeline.push({
-        at: v.createdAt,
-        who: name(v.editedBy),
-        what: `resubmitted (version ${v.versionNumber})`,
-      });
-  }
-  for (const s of steps) {
-    if (s.actedAt)
-      timeline.push({
-        at: s.actedAt,
-        who: name(s.assignedUserId),
-        what:
-          s.status === "Approved"
-            ? "approved"
-            : s.status === "Rejected"
-              ? "rejected"
-              : s.status === "ChangesRequested"
-                ? "requested changes"
-                : "acted",
-        note: s.comment ?? undefined,
-      });
-  }
-  for (const c of comments) {
-    if (c.type === "general")
-      timeline.push({
-        at: c.createdAt,
-        who: name(c.authorId),
-        what: "commented",
-        note: c.body,
-      });
-  }
-  timeline.sort((a, b) => a.at.localeCompare(b.at));
+      what: "created the memo",
+    },
+    ...events.map((e) => ({
+      at: e.createdAt,
+      who:
+        name(e.actorId) +
+        (e.onBehalfOf ? ` (on behalf of ${name(e.onBehalfOf)})` : ""),
+      what:
+        e.action === "submitted"
+          ? "submitted the memo"
+          : e.action === "resubmitted"
+            ? `resubmitted the memo (version ${e.versionNumber})`
+            : e.action,
+      note: e.comment ?? undefined,
+    })),
+  ].sort((a, b) => a.at.localeCompare(b.at));
 
   return (
     <div className="space-y-6">

@@ -22,7 +22,7 @@ export default async function ProfilePage() {
           role: profile.role,
           status: profile.status,
           department: deptName,
-          org: (org as { name?: string } | null)?.name ?? "",
+          org: org?.name ?? "",
         }}
       />
     </div>

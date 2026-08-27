@@ -87,45 +87,104 @@ export async function getProfile(uid: string): Promise<Profile | null> {
   };
 }
 
-export async function getOrg(orgId: string) {
+export type Org = {
+  id: string;
+  name: string;
+  identifier: string;
+  logoUrl: string | null;
+  contactEmail: string | null;
+  contactPhone: string | null;
+};
+
+export async function getOrg(orgId: string): Promise<Org | null> {
   const snap = await db().collection("orgs").doc(orgId).get();
-  return snap.exists ? { id: snap.id, ...snap.data()! } : null;
+  if (!snap.exists) return null;
+  const o = snap.data()!;
+  return {
+    id: snap.id,
+    name: o.name,
+    identifier: o.identifier,
+    logoUrl: o.logoUrl ?? null,
+    contactEmail: o.contactEmail ?? null,
+    contactPhone: o.contactPhone ?? null,
+  };
 }
 
 // One-equality-filter queries only (no composite indexes needed);
 // sorting/extra filtering happens in JS — fine at demo scale.
-async function listByOrg(collection: string, orgId: string) {
+// Every helper maps to plain objects: raw Firestore Timestamps cannot cross
+// the server/client component boundary.
+async function docsByOrg(collection: string, orgId: string) {
   const snap = await db().collection(collection).where("orgId", "==", orgId).get();
-  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  return snap.docs;
+}
+
+export type NamedItem = {
+  id: string;
+  name: string;
+  description: string | null;
+  isActive: boolean;
+};
+
+async function listNamed(collection: string, orgId: string): Promise<NamedItem[]> {
+  const docs = await docsByOrg(collection, orgId);
+  return docs
+    .map((d) => {
+      const x = d.data();
+      return {
+        id: d.id,
+        name: x.name as string,
+        description: (x.description ?? null) as string | null,
+        isActive: x.isActive !== false,
+      };
+    })
+    .sort((a, b) => a.name.localeCompare(b.name));
 }
 
 export async function listDepartments(orgId: string) {
-  const rows = (await listByOrg("departments", orgId)) as {
-    id: string; name: string; description?: string | null; isActive?: boolean;
-  }[];
-  return rows.sort((a, b) => a.name.localeCompare(b.name));
+  return listNamed("departments", orgId);
 }
 
 export async function listCategories(orgId: string) {
-  const rows = (await listByOrg("categories", orgId)) as {
-    id: string; name: string; description?: string | null; isActive?: boolean;
-  }[];
-  return rows.sort((a, b) => a.name.localeCompare(b.name));
+  return listNamed("categories", orgId);
 }
 
 export async function listTemplates(orgId: string) {
-  const rows = (await listByOrg("templates", orgId)) as {
-    id: string; name: string; description?: string | null; isActive?: boolean;
-    steps?: { order: number; label: string }[];
-  }[];
-  return rows.sort((a, b) => a.name.localeCompare(b.name));
+  const docs = await docsByOrg("templates", orgId);
+  return docs
+    .map((d) => {
+      const t = d.data();
+      return {
+        id: d.id,
+        name: t.name as string,
+        description: (t.description ?? null) as string | null,
+        isActive: t.isActive !== false,
+        steps: ((t.steps ?? []) as { order: number; label: string }[]).map((s) => ({
+          order: s.order,
+          label: s.label,
+        })),
+      };
+    })
+    .sort((a, b) => a.name.localeCompare(b.name));
 }
 
-export async function listOrgProfiles(orgId: string) {
-  const rows = (await listByOrg("profiles", orgId)) as unknown as (Profile & {
-    fullName: string;
-  })[];
-  return rows.sort((a, b) => a.fullName.localeCompare(b.fullName));
+export async function listOrgProfiles(orgId: string): Promise<Profile[]> {
+  const docs = await docsByOrg("profiles", orgId);
+  return docs
+    .map((d) => {
+      const p = d.data();
+      return {
+        id: d.id,
+        orgId: p.orgId as string,
+        fullName: p.fullName as string,
+        email: p.email as string,
+        designation: (p.designation ?? null) as string | null,
+        departmentId: (p.departmentId ?? null) as string | null,
+        role: p.role as Profile["role"],
+        status: p.status as Profile["status"],
+      };
+    })
+    .sort((a, b) => a.fullName.localeCompare(b.fullName));
 }
 
 export async function profilesMap(orgId: string) {
@@ -254,6 +313,39 @@ export async function listSteps(memoId: string): Promise<StepDoc[]> {
     .sort((a, b) => a.order - b.order);
 }
 
+export type MemoEvent = {
+  id: string;
+  actorId: string;
+  action: string;
+  comment: string | null;
+  onBehalfOf: string | null;
+  stepOrder: number | null;
+  versionNumber: number | null;
+  createdAt: string;
+};
+
+// Append-only history. Step documents are reset when a memo is returned for
+// changes and resubmitted, so the timeline is built from this log instead —
+// it preserves every decision across every submission round.
+export async function listEvents(memoId: string): Promise<MemoEvent[]> {
+  const snap = await db().collection("memos").doc(memoId).collection("events").get();
+  return snap.docs
+    .map((d) => {
+      const e = d.data();
+      return {
+        id: d.id,
+        actorId: e.actorId as string,
+        action: e.action as string,
+        comment: (e.comment ?? null) as string | null,
+        onBehalfOf: (e.onBehalfOf ?? null) as string | null,
+        stepOrder: (e.stepOrder ?? null) as number | null,
+        versionNumber: (e.versionNumber ?? null) as number | null,
+        createdAt: tsToIso(e.createdAt),
+      };
+    })
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+}
+
 export async function listComments(memoId: string) {
   const snap = await db().collection("memos").doc(memoId).collection("comments").get();
   return snap.docs
@@ -356,6 +448,18 @@ export async function submitMemoTx(
 
       const stepsSnap = await tx.get(memoRef.collection("steps"));
 
+      const recordEvent = (action: string, versionNumber: number) => {
+        tx.set(memoRef.collection("events").doc(), {
+          actorId: actor.id,
+          action,
+          comment: null,
+          onBehalfOf: null,
+          stepOrder: null,
+          versionNumber,
+          createdAt: FieldValue.serverTimestamp(),
+        });
+      };
+
       let memoNumber = memo.memoNumber;
       if (!memoNumber) {
         memoNumber = await nextMemoNumber(tx, actor.orgId);
@@ -392,6 +496,7 @@ export async function submitMemoTx(
           completedAt: null,
           updatedAt: FieldValue.serverTimestamp(),
         });
+        recordEvent("resubmitted", version);
       } else {
         if (validated.length === 0) throw new Error("Workflow requires at least one participant.");
         if (stepsSnap.size > 0) throw new Error("Workflow already exists.");
@@ -425,6 +530,7 @@ export async function submitMemoTx(
           submittedAt: FieldValue.serverTimestamp(),
           updatedAt: FieldValue.serverTimestamp(),
         });
+        recordEvent("submitted", 1);
       }
       notifyTarget = firstAssignee;
     });
@@ -521,8 +627,22 @@ export async function performWorkflowActionTx(
         });
       };
 
+      // Append-only: survives the step reset that a resubmission performs.
+      const recordEvent = (act: string) => {
+        tx.set(memoRef.collection("events").doc(), {
+          actorId: actor.id,
+          action: act,
+          comment: comment?.trim() || null,
+          onBehalfOf,
+          stepOrder: current.order,
+          versionNumber: memo.currentVersion,
+          createdAt: FieldValue.serverTimestamp(),
+        });
+      };
+
       if (action === "comment") {
         commentDoc("general", false);
+        recordEvent("commented");
         notifications.push({
           userId: memo.authorId,
           type: "comment_added",
@@ -540,6 +660,7 @@ export async function performWorkflowActionTx(
           actedOnBehalfOf: onBehalfOf,
         });
         if (comment?.trim()) commentDoc("approval", true);
+        recordEvent("approved");
         const next = steps.find((s) => s.order > current.order && s.status === "Pending");
         if (next) {
           tx.update(next.ref, { status: "Active" });
@@ -579,6 +700,7 @@ export async function performWorkflowActionTx(
           actedOnBehalfOf: onBehalfOf,
         });
         commentDoc("rejection", true);
+        recordEvent("rejected");
         tx.update(memoRef, {
           status: "Rejected",
           currentStepOrder: null,
@@ -603,6 +725,7 @@ export async function performWorkflowActionTx(
         actedOnBehalfOf: onBehalfOf,
       });
       commentDoc("change_request", true);
+      recordEvent("requested changes");
       tx.update(memoRef, {
         status: "Changes Requested",
         currentStepOrder: null,
