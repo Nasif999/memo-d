@@ -6,6 +6,7 @@ export function middleware(request: NextRequest) {
   const hasSession = Boolean(request.cookies.get("session")?.value);
   const isAuthPage =
     request.nextUrl.pathname.startsWith("/login") ||
+    request.nextUrl.pathname.startsWith("/signup") ||
     request.nextUrl.pathname.startsWith("/reset-password");
 
   if (!hasSession && !isAuthPage) {

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { signInWithEmailAndPassword } from "firebase/auth";
 import { firebaseAuth } from "@/lib/firebase/client";
@@ -89,9 +90,15 @@ export default function LoginPage() {
               {loading ? "Signing in…" : "Sign in"}
             </Button>
             <p className="text-center text-sm text-muted-foreground">
-              <a href="/reset-password" className="underline">
+              <Link href="/reset-password" className="underline">
                 Forgot password?
-              </a>
+              </Link>
+            </p>
+            <p className="border-t pt-4 text-center text-sm text-muted-foreground">
+              New organization?{" "}
+              <Link href="/signup" className="font-medium underline">
+                Create one
+              </Link>
             </p>
           </form>
         </CardContent>
