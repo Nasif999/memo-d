@@ -56,7 +56,13 @@ export default async function DashboardPage() {
   ]);
   const deptName = new Map(departments.map((d) => [d.id, d.name]));
 
-  const awaiting: MemoRow[] = inbox.map((m) => ({
+  // "On your desk" is everything that needs this person's action right now —
+  // not just memos at a workflow step assigned to them. A memo sent back with
+  // Changes Requested has no active step (currentAssigneeId is cleared), but
+  // the ball is squarely in the author's court to revise and resubmit, so it
+  // belongs here too.
+  const needsRevision = mine.filter((m) => m.status === "Changes Requested");
+  const awaiting: MemoRow[] = [...needsRevision, ...inbox].map((m) => ({
     id: m.id,
     memo_number: m.memoNumber,
     subject: m.subject,
