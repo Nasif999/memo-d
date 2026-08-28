@@ -9,11 +9,7 @@ import {
   DESIGNATION_SUGGESTIONS,
   DESIGNATION_LIST_ID,
 } from "@/lib/designations";
-import {
-  registerOrganization,
-  joinWithCode,
-  requestToJoin,
-} from "@/app/(auth)/signup/actions";
+import { registerOrganization, requestToJoin } from "@/app/(auth)/signup/actions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -25,7 +21,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 
-type Mode = "create" | "code" | "request";
+type Mode = "create" | "request";
 
 const MODES: { key: Mode; label: string; blurb: string }[] = [
   {
@@ -34,27 +30,15 @@ const MODES: { key: Mode; label: string; blurb: string }[] = [
     blurb: "Set up a new workspace. You become its first administrator.",
   },
   {
-    key: "code",
-    label: "Join with code",
-    blurb: "Use the invite code from your organization's administrator.",
-  },
-  {
     key: "request",
-    label: "Request to join",
-    blurb: "No code? Ask an administrator to approve your account.",
+    label: "Join an organization",
+    blurb: "Ask an administrator to approve your account.",
   },
 ];
 
-export function SignupForm({
-  orgs,
-  invitedCode = "",
-}: {
-  orgs: { id: string; name: string }[];
-  invitedCode?: string;
-}) {
+export function SignupForm({ orgs }: { orgs: { id: string; name: string }[] }) {
   const router = useRouter();
-  // Arriving through an invite link opens straight on the join tab.
-  const [mode, setMode] = useState<Mode>(invitedCode ? "code" : "create");
+  const [mode, setMode] = useState<Mode>("create");
   const [form, setForm] = useState({
     orgName: "",
     identifier: "",
@@ -62,7 +46,6 @@ export function SignupForm({
     email: "",
     password: "",
     designation: "",
-    joinCode: invitedCode,
     orgId: "",
   });
   const [error, setError] = useState<string | null>(null);
@@ -81,7 +64,6 @@ export function SignupForm({
     setLoading(false);
   }
 
-  // Shared by the two paths that end with the user signed in.
   async function signIn() {
     try {
       const cred = await signInWithEmailAndPassword(
@@ -109,13 +91,6 @@ export function SignupForm({
 
     if (mode === "create") {
       const res = await registerOrganization(form);
-      if (res.error) return fail(res.error);
-      await signIn();
-      return;
-    }
-
-    if (mode === "code") {
-      const res = await joinWithCode(form);
       if (res.error) return fail(res.error);
       await signIn();
       return;
@@ -161,15 +136,7 @@ export function SignupForm({
         <CardDescription>{active.blurb}</CardDescription>
       </CardHeader>
       <CardContent>
-        {invitedCode && (
-          <p className="mb-4 rounded-md border border-border bg-muted px-3 py-2 text-xs text-muted-foreground">
-            You were invited with the code{" "}
-            <span className="font-mono font-medium">{invitedCode}</span>. Fill
-            in your details below to join.
-          </p>
-        )}
-
-        <div className="mb-6 grid grid-cols-3 gap-1 rounded-lg bg-muted p-1">
+        <div className="mb-6 grid grid-cols-2 gap-1 rounded-lg bg-muted p-1">
           {MODES.map((m) => (
             <button
               key={m.key}
@@ -225,24 +192,6 @@ export function SignupForm({
                   {(form.identifier || "ACME").toUpperCase()}-
                   {new Date().getFullYear()}-00001
                 </span>
-              </p>
-            </div>
-          )}
-
-          {mode === "code" && (
-            <div className="space-y-2">
-              <Label htmlFor="joinCode">Invite code</Label>
-              <Input
-                id="joinCode"
-                required
-                value={form.joinCode}
-                onChange={set("joinCode")}
-                placeholder="ACME-7K2P-9QX4"
-                className="font-mono uppercase"
-              />
-              <p className="text-xs text-muted-foreground">
-                Ask your administrator for this code — it appears on their Users
-                screen. You join immediately as a regular user.
               </p>
             </div>
           )}
@@ -337,9 +286,7 @@ export function SignupForm({
               ? "Working…"
               : mode === "create"
                 ? "Create organization"
-                : mode === "code"
-                  ? "Join organization"
-                  : "Request to join"}
+                : "Request to join"}
           </Button>
           <p className="text-center text-sm text-muted-foreground">
             Already have an account?{" "}

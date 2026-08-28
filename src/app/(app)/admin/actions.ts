@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { FieldValue } from "firebase-admin/firestore";
 import { adminAuth, db } from "@/lib/firebase/admin";
 import { requireAdmin } from "@/lib/auth";
-import { logAudit, generateJoinCode } from "@/lib/data";
+import { logAudit } from "@/lib/data";
 
 // Every action here re-verifies the caller is an org admin and scopes all
 // reads/writes to the admin's own orgId.
@@ -287,18 +287,4 @@ export async function rejectJoinRequest(userId: string) {
   await logAudit(admin.orgId, admin.id, "join_request_rejected", "user", userId, profile.email);
   revalidatePath("/admin/users");
   return { ok: true };
-}
-
-// Regenerating invalidates the previous code immediately — the way to revoke a
-// code that has been shared too widely.
-export async function regenerateJoinCode() {
-  const admin = await requireAdmin();
-  const orgRef = db().collection("orgs").doc(admin.orgId);
-  const org = await orgRef.get();
-  if (!org.exists) return { error: "Organization not found." };
-  const code = generateJoinCode(org.data()!.identifier as string);
-  await orgRef.update({ joinCode: code });
-  await logAudit(admin.orgId, admin.id, "join_code_regenerated", "org", admin.orgId, null);
-  revalidatePath("/admin/users");
-  return { ok: true, code };
 }

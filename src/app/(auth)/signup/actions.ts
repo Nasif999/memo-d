@@ -3,12 +3,7 @@
 import { z } from "zod";
 import { FieldValue } from "firebase-admin/firestore";
 import { adminAuth, db } from "@/lib/firebase/admin";
-import {
-  logAudit,
-  generateJoinCode,
-  findOrgByJoinCode,
-  listJoinableOrgs,
-} from "@/lib/data";
+import { logAudit, listJoinableOrgs } from "@/lib/data";
 
 // Public, unauthenticated endpoint: registers a new tenant and its first
 // administrator. It can only ever create a brand-new organization — it never
@@ -82,7 +77,6 @@ export async function registerOrganization(input: SignupInput) {
       logoUrl: null,
       contactEmail: email,
       contactPhone: null,
-      joinCode: generateJoinCode(identifier),
       isActive: true,
       createdAt: FieldValue.serverTimestamp(),
     });
@@ -150,11 +144,6 @@ const accountSchema = {
   designation: z.string().trim().max(120),
 };
 
-const joinCodeSchema = z.object({
-  ...accountSchema,
-  joinCode: z.string().trim().min(4).max(40),
-});
-
 const joinRequestSchema = z.object({
   ...accountSchema,
   orgId: z.string().trim().min(1),
@@ -164,7 +153,6 @@ type JoinResult =
   | { error: string; orgName?: undefined }
   | { ok: true; orgName: string; error?: undefined };
 
-export type JoinCodeInput = z.infer<typeof joinCodeSchema>;
 export type JoinRequestInput = z.infer<typeof joinRequestSchema>;
 
 // Org names shown in the "request to join" picker. Public by necessity: you
@@ -211,30 +199,8 @@ async function createMember(
     return { error: "Could not complete the request. Please try again." };
   }
 
-  await logAudit(
-    orgId,
-    uid,
-    status === "active" ? "user_joined_with_code" : "join_requested",
-    "user",
-    uid,
-    input.email
-  );
+  await logAudit(orgId, uid, "join_requested", "user", uid, input.email);
   return {};
-}
-
-export async function joinWithCode(input: JoinCodeInput): Promise<JoinResult> {
-  const parsed = joinCodeSchema.safeParse(input);
-  if (!parsed.success) {
-    return { error: parsed.error.issues[0]?.message ?? "Invalid details." };
-  }
-  const org = await findOrgByJoinCode(parsed.data.joinCode.trim().toUpperCase());
-  // Same message whether the code is wrong or the org is inactive — a failed
-  // guess must not reveal that a code very nearly matched something.
-  if (!org) return { error: "That join code is not valid." };
-
-  const res = await createMember(org.id, parsed.data, "active");
-  if (res.error) return { error: res.error };
-  return { ok: true, orgName: org.name };
 }
 
 export async function requestToJoin(input: JoinRequestInput): Promise<JoinResult> {

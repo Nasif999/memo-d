@@ -97,7 +97,6 @@ export type Org = {
   logoUrl: string | null;
   contactEmail: string | null;
   contactPhone: string | null;
-  joinCode: string | null;
 };
 
 export async function getOrg(orgId: string): Promise<Org | null> {
@@ -111,36 +110,7 @@ export async function getOrg(orgId: string): Promise<Org | null> {
     logoUrl: o.logoUrl ?? null,
     contactEmail: o.contactEmail ?? null,
     contactPhone: o.contactPhone ?? null,
-    joinCode: o.joinCode ?? null,
   };
-}
-
-// Join codes are shared out-of-band by an administrator. Ambiguous characters
-// (0/O, 1/I) are excluded so a code survives being read aloud or retyped.
-const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-
-export function generateJoinCode(identifier: string) {
-  const rand = (n: number) =>
-    Array.from(
-      { length: n },
-      () => CODE_ALPHABET[Math.floor(Math.random() * CODE_ALPHABET.length)]
-    ).join("");
-  return `${identifier}-${rand(4)}-${rand(4)}`;
-}
-
-// Unauthenticated lookup for the public "join with code" flow. The code is the
-// only credential, so it is matched exactly and is never exposed anywhere
-// outside its own organization's admin screen.
-export async function findOrgByJoinCode(code: string) {
-  const snap = await db()
-    .collection("orgs")
-    .where("joinCode", "==", code)
-    .limit(1)
-    .get();
-  if (snap.empty) return null;
-  const d = snap.docs[0];
-  if (d.data().isActive === false) return null;
-  return { id: d.id, name: d.data().name as string };
 }
 
 // Public directory for the "request to join" flow. Deliberately returns only

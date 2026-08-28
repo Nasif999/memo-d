@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
   createUser, setUserStatus, setUserRole, setUserDepartment,
-  approveJoinRequest, rejectJoinRequest, regenerateJoinCode,
+  approveJoinRequest, rejectJoinRequest,
 } from "@/app/(app)/admin/actions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -33,12 +33,10 @@ export function UsersAdmin({
   users,
   departments,
   selfId,
-  joinCode,
 }: {
   users: User[];
   departments: { id: string; name: string }[];
   selfId: string;
-  joinCode: string | null;
 }) {
   const router = useRouter();
   // Pending profiles are join requests, not members — they are listed and
@@ -73,29 +71,6 @@ export function UsersAdmin({
     router.refresh();
   }
 
-  // Built client-side so the link always matches whatever host is actually
-  // being browsed — localhost in development, the deployed domain in
-  // production — without needing to know the deploy URL in advance.
-  const [origin, setOrigin] = useState("");
-  useEffect(() => setOrigin(window.location.origin), []);
-  const inviteLink = joinCode && origin ? `${origin}/signup?code=${joinCode}` : "";
-
-  async function copyInvite() {
-    if (!inviteLink) return;
-    try {
-      await navigator.clipboard.writeText(inviteLink);
-      toast.success("Invite link copied");
-    } catch {
-      toast.error("Could not copy — select the link and copy it manually.");
-    }
-  }
-
-  async function rotateCode() {
-    const res = await regenerateJoinCode();
-    if (res.error) return toast.error(res.error);
-    toast.success("New join code generated. The previous code no longer works.");
-    router.refresh();
-  }
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [form, setForm] = useState({
@@ -195,49 +170,6 @@ export function UsersAdmin({
           </div>
         </DialogContent>
       </Dialog>
-
-      <Card>
-        <CardHeader><CardTitle>Invite people</CardTitle></CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <p className="text-sm font-medium">Invite link</p>
-            <div className="flex flex-wrap items-center gap-2">
-              <input
-                readOnly
-                value={inviteLink}
-                placeholder={joinCode ? "Loading…" : ""}
-                onFocus={(e) => e.currentTarget.select()}
-                className="min-w-0 flex-1 rounded-md border border-border bg-muted px-3 py-2 font-mono text-sm"
-              />
-              <Button size="sm" onClick={copyInvite} disabled={!inviteLink}>
-                Copy link
-              </Button>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Send this to colleagues. It opens the signup page with the code
-              already filled in.
-            </p>
-          </div>
-
-          <div className="space-y-2 border-t pt-4">
-            <p className="text-sm font-medium">Or share the code</p>
-            <div className="flex flex-wrap items-center gap-3">
-              <code className="rounded-md border border-border bg-muted px-3 py-2 font-mono text-lg tracking-[0.12em]">
-                {joinCode ?? "—"}
-              </code>
-              <Button size="sm" variant="outline" onClick={rotateCode}>
-                Regenerate
-              </Button>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Anyone with this code or link can join as a regular user without
-              approval. Share it only with people who should have access, and
-              regenerate it if it spreads — regenerating invalidates both the
-              old code and any link containing it, immediately.
-            </p>
-          </div>
-        </CardContent>
-      </Card>
 
       {pending.length > 0 && (
         <Card>

@@ -37,11 +37,12 @@ PDF export. Built for CSE226 (Foundations of Vibe Coding), North South Universit
   after a server-side tenant and visibility check, so guessing an id gains
   nothing. Uploads are capped at 5 MB and restricted by MIME type.
 - **Joining an organization is always authorized by that organization.** There
-  is no open "pick an org and get in" path. Public signup offers three modes:
-  create a new (empty) org, join with the org's secret invite code, or submit a
-  join request. A request creates a profile with status `pending`, which cannot
-  establish a session and is excluded from every participant picker, until an
-  admin of that same org approves it and assigns a role and department.
+  is no open "pick an org and get in" path. Public signup offers two modes:
+  create a new (empty) org, or submit a request to join an existing one. A
+  request creates a profile with status `pending`, which cannot establish a
+  session and is excluded from every participant picker, until an admin of
+  that same org approves it and assigns a role and department. Beyond that,
+  the manual path is an admin adding the account directly on **Admin → Users**.
   Self-service never yields `org_admin`, and `orgId` is always derived
   server-side — never taken from client input.
 - Passwords are hashed and managed by Firebase Auth. HTTPS via Vercel.
@@ -121,19 +122,14 @@ npm run build && npm start
 | Path | Who authorizes | Result |
 |---|---|---|
 | Create organization | n/a — new empty tenant | Creator becomes its first `org_admin` |
-| Join with code | Admin, by sharing the code | Immediate access as `user` |
 | Request to join | Admin, per request | `pending` until approved; no access meanwhile |
+| Added directly | Admin | Admin creates the account on **Admin → Users**; active immediately |
 
-An org's invite code is shown on **Admin → Users** and can be regenerated,
-which invalidates the previous code immediately. Pending requests appear on the
-same screen, where the admin sets role and department before approving;
-rejecting deletes the account so the person can re-apply.
-
-Organizations created before this feature can be given codes with:
-
-```bash
-node scripts/backfill-join-codes.mjs
-```
+Pending requests appear on **Admin → Users**, where the admin sets role and
+department before approving; rejecting deletes the account so the person can
+re-apply. There is no invite code or link — every path into an organization is
+either self-service into a brand-new empty tenant, or requires an
+administrator of that organization to act.
 
 ## Demo Accounts (seeded)
 
