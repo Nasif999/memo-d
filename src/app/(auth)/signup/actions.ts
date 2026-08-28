@@ -3,7 +3,12 @@
 import { z } from "zod";
 import { FieldValue } from "firebase-admin/firestore";
 import { adminAuth, db } from "@/lib/firebase/admin";
-import { logAudit } from "@/lib/data";
+import {
+  logAudit,
+  generateJoinCode,
+  findOrgByJoinCode,
+  listJoinableOrgs,
+} from "@/lib/data";
 
 // Public, unauthenticated endpoint: registers a new tenant and its first
 // administrator. It can only ever create a brand-new organization — it never
@@ -77,6 +82,7 @@ export async function registerOrganization(input: SignupInput) {
       logoUrl: null,
       contactEmail: email,
       contactPhone: null,
+      joinCode: generateJoinCode(identifier),
       isActive: true,
       createdAt: FieldValue.serverTimestamp(),
     });
@@ -123,4 +129,125 @@ export async function registerOrganization(input: SignupInput) {
     await adminAuth().deleteUser(uid).catch(() => {});
     return { error: "Could not create the organization. Please try again." };
   }
+}
+
+
+// ---------------------------------------------------------------------------
+// Joining an existing organization
+//
+// Neither path below lets a caller choose their own org membership freely:
+//   - "join with code" requires a secret held by that org's administrator;
+//   - "request to join" creates a profile with status "pending", which grants
+//     no access at all until an administrator of that same org approves it.
+// Both always create a plain "user" — never an administrator — and the orgId
+// is derived server-side, never taken from client input.
+// ---------------------------------------------------------------------------
+
+const accountSchema = {
+  fullName: z.string().trim().min(1).max(120),
+  email: z.string().trim().email(),
+  password: z.string().min(8).max(72),
+  designation: z.string().trim().max(120),
+};
+
+const joinCodeSchema = z.object({
+  ...accountSchema,
+  joinCode: z.string().trim().min(4).max(40),
+});
+
+const joinRequestSchema = z.object({
+  ...accountSchema,
+  orgId: z.string().trim().min(1),
+});
+
+type JoinResult =
+  | { error: string; orgName?: undefined }
+  | { ok: true; orgName: string; error?: undefined };
+
+export type JoinCodeInput = z.infer<typeof joinCodeSchema>;
+export type JoinRequestInput = z.infer<typeof joinRequestSchema>;
+
+// Org names shown in the "request to join" picker. Public by necessity: you
+// cannot ask to join something you cannot name. Exposes nothing else.
+export async function joinableOrganizations() {
+  return listJoinableOrgs();
+}
+
+async function createMember(
+  orgId: string,
+  input: { fullName: string; email: string; password: string; designation: string },
+  status: "active" | "pending"
+): Promise<{ error?: string }> {
+  let uid: string;
+  try {
+    const created = await adminAuth().createUser({
+      email: input.email,
+      password: input.password,
+      displayName: input.fullName,
+      emailVerified: true,
+    });
+    uid = created.uid;
+  } catch (e) {
+    const code = (e as { code?: string }).code;
+    if (code === "auth/email-already-exists") {
+      return { error: "An account with that email already exists." };
+    }
+    return { error: "Could not create the account." };
+  }
+
+  try {
+    await db().collection("profiles").doc(uid).set({
+      orgId,
+      fullName: input.fullName,
+      email: input.email,
+      designation: input.designation || null,
+      departmentId: null,
+      role: "user", // never an administrator by self-service
+      status,
+      createdAt: FieldValue.serverTimestamp(),
+    });
+  } catch {
+    await adminAuth().deleteUser(uid).catch(() => {});
+    return { error: "Could not complete the request. Please try again." };
+  }
+
+  await logAudit(
+    orgId,
+    uid,
+    status === "active" ? "user_joined_with_code" : "join_requested",
+    "user",
+    uid,
+    input.email
+  );
+  return {};
+}
+
+export async function joinWithCode(input: JoinCodeInput): Promise<JoinResult> {
+  const parsed = joinCodeSchema.safeParse(input);
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Invalid details." };
+  }
+  const org = await findOrgByJoinCode(parsed.data.joinCode.trim().toUpperCase());
+  // Same message whether the code is wrong or the org is inactive — a failed
+  // guess must not reveal that a code very nearly matched something.
+  if (!org) return { error: "That join code is not valid." };
+
+  const res = await createMember(org.id, parsed.data, "active");
+  if (res.error) return { error: res.error };
+  return { ok: true, orgName: org.name };
+}
+
+export async function requestToJoin(input: JoinRequestInput): Promise<JoinResult> {
+  const parsed = joinRequestSchema.safeParse(input);
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Invalid details." };
+  }
+  const snap = await db().collection("orgs").doc(parsed.data.orgId).get();
+  if (!snap.exists || snap.data()?.isActive === false) {
+    return { error: "That organization is not available." };
+  }
+
+  const res = await createMember(snap.id, parsed.data, "pending");
+  if (res.error) return { error: res.error };
+  return { ok: true, orgName: snap.data()!.name as string };
 }

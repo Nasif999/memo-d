@@ -36,6 +36,14 @@ PDF export. Built for CSE226 (Foundations of Vibe Coding), North South Universit
   documents. There is no public URL at all: downloads are streamed back only
   after a server-side tenant and visibility check, so guessing an id gains
   nothing. Uploads are capped at 5 MB and restricted by MIME type.
+- **Joining an organization is always authorized by that organization.** There
+  is no open "pick an org and get in" path. Public signup offers three modes:
+  create a new (empty) org, join with the org's secret invite code, or submit a
+  join request. A request creates a profile with status `pending`, which cannot
+  establish a session and is excluded from every participant picker, until an
+  admin of that same org approves it and assigns a role and department.
+  Self-service never yields `org_admin`, and `orgId` is always derived
+  server-side — never taken from client input.
 - Passwords are hashed and managed by Firebase Auth. HTTPS via Vercel.
 - Comments and audit log entries are written once and never updated or deleted
   by user-reachable code paths.
@@ -108,6 +116,25 @@ npm run build && npm start
    (paste the service-account JSON as a single line).
 3. Deploy — no other configuration needed.
 
+## Joining an Organization
+
+| Path | Who authorizes | Result |
+|---|---|---|
+| Create organization | n/a — new empty tenant | Creator becomes its first `org_admin` |
+| Join with code | Admin, by sharing the code | Immediate access as `user` |
+| Request to join | Admin, per request | `pending` until approved; no access meanwhile |
+
+An org's invite code is shown on **Admin → Users** and can be regenerated,
+which invalidates the previous code immediately. Pending requests appear on the
+same screen, where the admin sets role and department before approving;
+rejecting deletes the account so the person can re-apply.
+
+Organizations created before this feature can be given codes with:
+
+```bash
+node scripts/backfill-join-codes.mjs
+```
+
 ## Demo Accounts (seeded)
 
 All demo accounts use password **`Passw0rd!`**.
@@ -132,7 +159,15 @@ request changes. The timeline, notifications, and audit log update at every step
 
 ## Known Limitations
 
-- Email notifications not implemented (in-app notification center only).
+- Email notifications not implemented (in-app notification center only), so a
+  pending applicant is not emailed when approved, and admins are not emailed
+  when a request arrives — both are visible in-app.
+- Creating a new organization is open to anyone, by design: it produces an
+  isolated empty tenant and grants no access to existing data. Production would
+  add email verification and work-domain checks before allowing it.
+- The "request to join" picker lists organization names publicly, which is
+  unavoidable — you cannot ask to join something you cannot name. No other
+  organization detail is exposed.
 - Delegation is supported by the workflow engine (a delegate can act on behalf
   of an assignee and both identities are recorded) but has no management UI.
 - Version history shows metadata; side-by-side content diff not implemented.

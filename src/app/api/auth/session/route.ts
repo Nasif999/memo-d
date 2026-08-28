@@ -20,11 +20,21 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid token" }, { status: 401 });
   }
 
-  // Deactivated users cannot establish a session.
+  // Only fully active members get a session. A pending join request and a
+  // deactivated account are both refused here — the difference is only in the
+  // message shown, never in the access granted.
   const profileSnap = await db().collection("profiles").doc(decoded.uid).get();
   const profile = profileSnap.data();
   if (!profile || profile.status !== "active") {
-    return NextResponse.json({ error: "Account inactive" }, { status: 403 });
+    return NextResponse.json(
+      {
+        error:
+          profile?.status === "pending"
+            ? "Your request to join is still awaiting administrator approval."
+            : "This account is not active. Contact your administrator.",
+      },
+      { status: 403 }
+    );
   }
 
   const sessionCookie = await adminAuth().createSessionCookie(idToken, {

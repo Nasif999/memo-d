@@ -1,12 +1,13 @@
 import { requireAdmin } from "@/lib/auth";
-import { listOrgProfiles, listDepartments } from "@/lib/data";
+import { listOrgProfiles, listDepartments, getOrg } from "@/lib/data";
 import { UsersAdmin } from "@/components/admin/users-admin";
 
 export default async function AdminUsersPage() {
   const admin = await requireAdmin();
-  const [users, departments] = await Promise.all([
+  const [users, departments, org] = await Promise.all([
     listOrgProfiles(admin.orgId),
     listDepartments(admin.orgId),
+    getOrg(admin.orgId),
   ]);
 
   return (
@@ -24,6 +25,7 @@ export default async function AdminUsersPage() {
         }))}
         departments={departments.filter((d) => d.isActive !== false)}
         selfId={admin.id}
+        joinCode={org?.joinCode ?? null}
       />
     </div>
   );

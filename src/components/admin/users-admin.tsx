@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
   createUser, setUserStatus, setUserRole, setUserDepartment,
+  approveJoinRequest, rejectJoinRequest, regenerateJoinCode,
 } from "@/app/(app)/admin/actions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -32,12 +33,52 @@ export function UsersAdmin({
   users,
   departments,
   selfId,
+  joinCode,
 }: {
   users: User[];
   departments: { id: string; name: string }[];
   selfId: string;
+  joinCode: string | null;
 }) {
   const router = useRouter();
+  // Pending profiles are join requests, not members — they are listed and
+  // acted on separately so an admin never confuses the two.
+  const pending = users.filter((u) => u.status === "pending");
+  const members = users.filter((u) => u.status !== "pending");
+  const [decisions, setDecisions] = useState<
+    Record<string, { role: "user" | "org_admin"; department_id: string }>
+  >({});
+
+  function decisionFor(id: string) {
+    return decisions[id] ?? { role: "user" as const, department_id: "" };
+  }
+
+  async function approve(u: User) {
+    const d = decisionFor(u.id);
+    const res = await approveJoinRequest({
+      userId: u.id,
+      role: d.role,
+      department_id: d.department_id || null,
+      designation: u.designation ?? "",
+    });
+    if (res.error) return toast.error(res.error);
+    toast.success(`${u.full_name} approved`);
+    router.refresh();
+  }
+
+  async function reject(u: User) {
+    const res = await rejectJoinRequest(u.id);
+    if (res.error) return toast.error(res.error);
+    toast.success("Request rejected");
+    router.refresh();
+  }
+
+  async function rotateCode() {
+    const res = await regenerateJoinCode();
+    if (res.error) return toast.error(res.error);
+    toast.success("New join code generated. The previous code no longer works.");
+    router.refresh();
+  }
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [form, setForm] = useState({
@@ -139,6 +180,101 @@ export function UsersAdmin({
       </Dialog>
 
       <Card>
+        <CardHeader><CardTitle>Invite code</CardTitle></CardHeader>
+        <CardContent className="space-y-2">
+          <div className="flex flex-wrap items-center gap-3">
+            <code className="rounded-md border bg-slate-50 px-3 py-2 font-mono text-lg tracking-wider">
+              {joinCode ?? "—"}
+            </code>
+            <Button size="sm" variant="outline" onClick={rotateCode}>
+              Regenerate
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Anyone with this code can join as a regular user without approval.
+            Share it only with people who should have access, and regenerate it
+            if it spreads — regenerating invalidates the old code immediately.
+          </p>
+        </CardContent>
+      </Card>
+
+      {pending.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Join requests ({pending.length})</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="mb-3 text-xs text-muted-foreground">
+              These people asked to join. They have no access to any memo until
+              approved. Set their role and department before approving.
+            </p>
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Name</TableHead>
+                    <TableHead>Email</TableHead>
+                    <TableHead>Designation</TableHead>
+                    <TableHead>Department</TableHead>
+                    <TableHead>Role</TableHead>
+                    <TableHead>Decision</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {pending.map((u) => (
+                    <TableRow key={u.id}>
+                      <TableCell className="font-medium">{u.full_name}</TableCell>
+                      <TableCell>{u.email}</TableCell>
+                      <TableCell>{u.designation ?? "—"}</TableCell>
+                      <TableCell>
+                        <select
+                          className="h-8 rounded-md border bg-white px-1 text-sm"
+                          value={decisionFor(u.id).department_id}
+                          onChange={(e) =>
+                            setDecisions((prev) => ({
+                              ...prev,
+                              [u.id]: { ...decisionFor(u.id), department_id: e.target.value },
+                            }))
+                          }>
+                          <option value="">None</option>
+                          {departments.map((d) => (
+                            <option key={d.id} value={d.id}>{d.name}</option>
+                          ))}
+                        </select>
+                      </TableCell>
+                      <TableCell>
+                        <select
+                          className="h-8 rounded-md border bg-white px-1 text-sm"
+                          value={decisionFor(u.id).role}
+                          onChange={(e) =>
+                            setDecisions((prev) => ({
+                              ...prev,
+                              [u.id]: {
+                                ...decisionFor(u.id),
+                                role: e.target.value as "user" | "org_admin",
+                              },
+                            }))
+                          }>
+                          <option value="user">User</option>
+                          <option value="org_admin">Admin</option>
+                        </select>
+                      </TableCell>
+                      <TableCell className="space-x-1 whitespace-nowrap">
+                        <Button size="sm" onClick={() => approve(u)}>Approve</Button>
+                        <Button size="sm" variant="outline" onClick={() => reject(u)}>
+                          Reject
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      <Card>
         <CardHeader><CardTitle>Organization users</CardTitle></CardHeader>
         <CardContent>
           <div className="overflow-x-auto">
@@ -155,7 +291,7 @@ export function UsersAdmin({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {users.map((u) => (
+                {members.map((u) => (
                   <TableRow key={u.id}>
                     <TableCell className="font-medium">{u.full_name}</TableCell>
                     <TableCell>{u.email}</TableCell>
