@@ -1,9 +1,22 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import { IBM_Plex_Sans, IBM_Plex_Mono } from "next/font/google";
 import "./globals.css";
 import { cn } from "@/lib/utils";
 
-const inter = Inter({ subsets: ["latin"], variable: "--font-sans" });
+// Plex was drawn for an office-machine company, which is exactly what this is:
+// institutional without costume. The mono carries every identifier — memo
+// numbers, invite codes, timestamps — so records read as records.
+const sans = IBM_Plex_Sans({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  variable: "--font-sans",
+});
+
+const mono = IBM_Plex_Mono({
+  subsets: ["latin"],
+  weight: ["400", "500", "600"],
+  variable: "--font-mono",
+});
 
 export const metadata: Metadata = {
   title: "Memo'd — Inter-Office Memo Management",
@@ -17,8 +30,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={cn("font-sans", inter.variable)}>
-      <body className="antialiased">{children}</body>
+    <html lang="en" className={cn(sans.variable, mono.variable)}>
+      <body className="font-sans antialiased">{children}</body>
     </html>
   );
 }

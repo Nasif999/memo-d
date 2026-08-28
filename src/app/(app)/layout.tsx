@@ -15,7 +15,7 @@ export default async function AppLayout({
   ]);
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-screen bg-background">
       <AppNav
         profile={{
           full_name: profile.fullName,
@@ -23,9 +23,12 @@ export default async function AppLayout({
           designation: profile.designation,
         }}
         orgName={org?.name ?? ""}
+        orgIdentifier={org?.identifier ?? ""}
         unreadCount={unread}
       />
-      <main className="mx-auto max-w-7xl p-4 md:p-6">{children}</main>
+      <main className="mx-auto max-w-7xl px-4 py-6 md:px-6 md:py-8">
+        {children}
+      </main>
       <Toaster />
     </div>
   );

@@ -54,13 +54,21 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-50 p-4">
-      <Card className="w-full max-w-md">
-        <CardHeader>
-          <CardTitle className="text-2xl">Memo&apos;d</CardTitle>
-          <CardDescription>
-            Inter-Office Memo Management — sign in to your organization
-          </CardDescription>
+    <div className="flex min-h-screen items-center justify-center bg-background p-4">
+      <div className="w-full max-w-md space-y-5">
+        <div className="space-y-1.5">
+          <p className="eyebrow">Inter-office memo management</p>
+          <h1 className="text-3xl font-semibold tracking-tight">
+            Memo&apos;d
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            Sign in to your organization.
+          </p>
+        </div>
+      <Card className="w-full">
+        <CardHeader className="sr-only">
+          <CardTitle>Sign in</CardTitle>
+          <CardDescription>Sign in to your organization</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleLogin} className="space-y-4">
@@ -85,7 +93,11 @@ export default function LoginPage() {
                 onChange={(e) => setPassword(e.target.value)}
               />
             </div>
-            {error && <p className="text-sm text-red-600">{error}</p>}
+            {error && (
+              <p className="rounded-md border border-destructive/25 bg-state-rejected-wash px-3 py-2 text-sm text-destructive">
+                {error}
+              </p>
+            )}
             <Button type="submit" className="w-full" disabled={loading}>
               {loading ? "Signing in…" : "Sign in"}
             </Button>
@@ -103,6 +115,7 @@ export default function LoginPage() {
           </form>
         </CardContent>
       </Card>
+      </div>
     </div>
   );
 }

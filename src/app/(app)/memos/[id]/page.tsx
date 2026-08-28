@@ -13,23 +13,25 @@ import {
   listDepartments,
   listCategories,
 } from "@/lib/data";
-import { StatusBadge, PriorityBadge } from "@/components/status-badge";
+import {
+  StatusBadge,
+  PriorityBadge,
+  TerminalStamp,
+} from "@/components/status-badge";
+import { RoutingRail } from "@/components/routing-rail";
 import { WorkflowActionPanel } from "@/components/workflow-action-panel";
 import { CommentBox } from "@/components/comment-box";
 import { AttachmentPanel } from "@/components/attachment-panel";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
-
-const stepIcon: Record<string, string> = {
-  Approved: "✅",
-  Rejected: "❌",
-  ChangesRequested: "↩️",
-  Active: "🟡",
-  Pending: "⚪",
-  Skipped: "⏭️",
-};
 
 export default async function MemoDetailsPage({
   params,
@@ -94,43 +96,87 @@ export default async function MemoDetailsPage({
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-bold">{memo.subject}</h1>
-            <StatusBadge status={memo.status} />
-            <PriorityBadge priority={memo.priority} />
+      {/* The memo's own header block: the fields a paper memo carries. */}
+      <div className="overflow-hidden rounded-lg border border-border bg-card">
+        <div className="flex flex-wrap items-start justify-between gap-4 border-b border-border px-5 py-4">
+          <div className="min-w-0 space-y-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="eyebrow">{memo.memoNumber ?? "Unfiled draft"}</p>
+              <StatusBadge status={memo.status} />
+              <PriorityBadge priority={memo.priority} />
+            </div>
+            <h1 className="text-2xl font-semibold leading-tight tracking-tight">
+              {memo.subject}
+            </h1>
           </div>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {memo.memoNumber ?? "Draft (no number yet)"} · by{" "}
-            {name(memo.authorId)}
-            {deptName ? ` · ${deptName}` : ""}
-            {catName ? ` · ${catName}` : ""} ·{" "}
-            {format(new Date(memo.createdAt), "PPp")}
-          </p>
+          <div className="flex shrink-0 items-center gap-4">
+            <TerminalStamp status={memo.status} />
+            <div className="flex gap-2">
+              {canEdit && (
+                <Link href={`/memos/${memo.id}/edit`}>
+                  <Button variant="outline">
+                    {memo.status === "Changes Requested"
+                      ? "Revise"
+                      : "Edit draft"}
+                  </Button>
+                </Link>
+              )}
+              {memo.memoNumber && (
+                <a href={`/api/memos/${memo.id}/pdf`} target="_blank">
+                  <Button variant="outline">Export PDF</Button>
+                </a>
+              )}
+            </div>
+          </div>
         </div>
-        <div className="flex gap-2">
-          {canEdit && (
-            <Link href={`/memos/${memo.id}/edit`}>
-              <Button variant="outline">
-                {memo.status === "Changes Requested" ? "Revise" : "Edit draft"}
-              </Button>
-            </Link>
-          )}
-          {memo.memoNumber && (
-            <a href={`/api/memos/${memo.id}/pdf`} target="_blank">
-              <Button variant="outline">Export PDF</Button>
-            </a>
-          )}
-        </div>
+        <dl className="grid gap-4 px-5 py-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="doc-field">
+            <dt>From</dt>
+            <dd>{name(memo.authorId)}</dd>
+          </div>
+          <div className="doc-field">
+            <dt>Department</dt>
+            <dd>{deptName ?? "—"}</dd>
+          </div>
+          <div className="doc-field">
+            <dt>Category</dt>
+            <dd>{catName ?? "—"}</dd>
+          </div>
+          <div className="doc-field">
+            <dt>Raised</dt>
+            <dd className="font-mono text-xs tabular">
+              {format(new Date(memo.createdAt), "dd MMM yyyy · HH:mm")}
+            </dd>
+          </div>
+        </dl>
       </div>
 
       {currentStep && (
-        <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm">
-          <strong>
-            Awaiting action from {name(currentStep.assignedUserId)}
-          </strong>
-          {isMyTurn && " — it's your turn to act on this memo."}
+        <div
+          className={cn(
+            "flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border px-4 py-3 text-sm",
+            isMyTurn
+              ? "border-state-pending/40 bg-state-pending-wash"
+              : "border-border bg-card"
+          )}
+        >
+          <span className="stamp border-state-pending/35 bg-state-pending-wash text-state-pending">
+            Step {currentStep.order}
+          </span>
+          {isMyTurn ? (
+            <span>
+              <strong>This memo is on your desk.</strong> Approve it, reject it,
+              or send it back for changes below.
+            </span>
+          ) : (
+            <span className="text-muted-foreground">
+              Waiting on{" "}
+              <strong className="text-foreground">
+                {name(currentStep.assignedUserId)}
+              </strong>
+              .
+            </span>
+          )}
         </div>
       )}
 
@@ -151,16 +197,19 @@ export default async function MemoDetailsPage({
           <Card>
             <CardHeader><CardTitle>Timeline</CardTitle></CardHeader>
             <CardContent>
-              <ol className="space-y-3">
+              <ol className="space-y-3.5">
                 {timeline.map((e, i) => (
-                  <li key={i} className="flex gap-3 text-sm">
-                    <span className="w-40 shrink-0 text-muted-foreground">
-                      {format(new Date(e.at), "PP p")}
+                  <li
+                    key={i}
+                    className="grid gap-1 text-sm sm:grid-cols-[10.5rem_1fr] sm:gap-3"
+                  >
+                    <span className="font-mono text-xs text-muted-foreground tabular">
+                      {format(new Date(e.at), "dd MMM yyyy · HH:mm")}
                     </span>
                     <span>
-                      <strong>{e.who}</strong> {e.what}
+                      <strong className="font-medium">{e.who}</strong> {e.what}
                       {e.note && (
-                        <span className="mt-1 block rounded bg-slate-100 p-2 text-slate-700">
+                        <span className="mt-1.5 block border-l-2 border-border bg-muted/60 px-3 py-2 text-muted-foreground">
                           {e.note}
                         </span>
                       )}
@@ -178,21 +227,31 @@ export default async function MemoDetailsPage({
                 <p className="text-sm text-muted-foreground">No comments yet.</p>
               )}
               {comments.map((c) => (
-                <div key={c.id} className="rounded-md border p-3 text-sm">
+                <div
+                  key={c.id}
+                  className="rounded-md border border-border bg-muted/30 p-3 text-sm"
+                >
                   <div className="mb-1 flex items-center justify-between">
                     <strong>{name(c.authorId)}</strong>
                     <span className="text-xs text-muted-foreground">
                       {c.type !== "general" && (
-                        <span className={cn(
-                          "mr-2 rounded px-1.5 py-0.5 text-xs",
-                          c.type === "approval" && "bg-green-100 text-green-800",
-                          c.type === "rejection" && "bg-red-100 text-red-800",
-                          c.type === "change_request" && "bg-orange-100 text-orange-800",
-                        )}>
+                        <span
+                          className={cn(
+                            "stamp mr-2",
+                            c.type === "approval" &&
+                              "border-state-approved/30 bg-state-approved-wash text-state-approved",
+                            c.type === "rejection" &&
+                              "border-state-rejected/30 bg-state-rejected-wash text-state-rejected",
+                            c.type === "change_request" &&
+                              "border-state-changes/30 bg-state-changes-wash text-state-changes"
+                          )}
+                        >
                           {c.type.replace("_", " ")}
                         </span>
                       )}
-                      {format(new Date(c.createdAt), "PP p")}
+                      <span className="font-mono tabular">
+                        {format(new Date(c.createdAt), "dd MMM yyyy · HH:mm")}
+                      </span>
                     </span>
                   </div>
                   <p>{c.body}</p>
@@ -206,38 +265,27 @@ export default async function MemoDetailsPage({
 
         <div className="space-y-6">
           <Card>
-            <CardHeader><CardTitle>Workflow</CardTitle></CardHeader>
+            <CardHeader>
+              <CardTitle>Route</CardTitle>
+              <CardDescription>
+                Approvals happen in this order, one desk at a time.
+              </CardDescription>
+            </CardHeader>
             <CardContent>
-              {steps.length === 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  Not submitted yet — no workflow.
-                </p>
-              ) : (
-                <ol className="space-y-3">
-                  {steps.map((s) => (
-                    <li key={s.id}
-                      className={cn(
-                        "rounded-md border p-3 text-sm",
-                        s.status === "Active" && "border-amber-300 bg-amber-50"
-                      )}>
-                      <div className="flex items-center gap-2">
-                        <span>{stepIcon[s.status]}</span>
-                        <strong>{s.order}. {name(s.assignedUserId)}</strong>
-                      </div>
-                      <p className="text-xs text-muted-foreground">
-                        {designation(s.assignedUserId)}
-                        {s.positionLabel ? ` · ${s.positionLabel}` : ""}
-                      </p>
-                      <p className="text-xs">
-                        {s.status === "Active" ? "Current step" : s.status}
-                        {s.actedAt && ` · ${format(new Date(s.actedAt), "PP p")}`}
-                        {s.actedOnBehalfOf &&
-                          ` (on behalf of ${name(s.actedOnBehalfOf)})`}
-                      </p>
-                    </li>
-                  ))}
-                </ol>
-              )}
+              <RoutingRail
+                viewerId={profile.id}
+                currentAssigneeId={currentStep?.assignedUserId ?? null}
+                steps={steps.map((s) => ({
+                  id: s.id,
+                  order: s.order,
+                  name: name(s.assignedUserId),
+                  designation: designation(s.assignedUserId),
+                  positionLabel: s.positionLabel ?? null,
+                  status: s.status,
+                  actedAt: s.actedAt ?? null,
+                  onBehalfOf: s.actedOnBehalfOf ? name(s.actedOnBehalfOf) : null,
+                }))}
+              />
             </CardContent>
           </Card>
 

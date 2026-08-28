@@ -8,17 +8,40 @@ import {
   listDepartments,
 } from "@/lib/data";
 import { MemoTable, type MemoRow } from "@/components/memo-table";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { PageHeader, SectionHeading } from "@/components/page-header";
+import { StatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
 
-function Stat({ label, value }: { label: string; value: number | string }) {
+// Counts are readings off a register: the number leads, its label sits under
+// it in the same caption voice used for every other field on the site.
+function Stat({
+  label,
+  value,
+  emphasis = false,
+}: {
+  label: string;
+  value: number | string;
+  emphasis?: boolean;
+}) {
   return (
-    <Card>
-      <CardContent className="pt-6">
-        <p className="text-3xl font-bold">{value}</p>
-        <p className="text-sm text-muted-foreground">{label}</p>
-      </CardContent>
-    </Card>
+    <div
+      className={
+        emphasis && Number(value) > 0
+          ? "rounded-lg border border-state-pending/35 bg-state-pending-wash px-4 py-3.5"
+          : "rounded-lg border border-border bg-card px-4 py-3.5"
+      }
+    >
+      <p
+        className={
+          emphasis && Number(value) > 0
+            ? "font-mono text-2xl font-semibold leading-none text-state-pending tabular"
+            : "font-mono text-2xl font-semibold leading-none tabular"
+        }
+      >
+        {value}
+      </p>
+      <p className="eyebrow mt-2 block leading-tight">{label}</p>
+    </div>
   );
 }
 
@@ -64,48 +87,67 @@ export default async function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">
-          Welcome, {profile.fullName.split(" ")[0]}
-        </h1>
-        <Link href="/memos/new"><Button>+ New Memo</Button></Link>
-      </div>
+      <PageHeader
+        eyebrow={`${profile.designation ?? "Member"} · ${profile.role === "org_admin" ? "Administrator" : "User"}`}
+        title={`Good to see you, ${profile.fullName.split(" ")[0]}`}
+        description={
+          awaiting.length > 0
+            ? `${awaiting.length} memo${awaiting.length === 1 ? "" : "s"} ${awaiting.length === 1 ? "is" : "are"} on your desk.`
+            : "Nothing is waiting on you right now."
+        }
+        actions={
+          <Link href="/memos/new">
+            <Button>Write a memo</Button>
+          </Link>
+        }
+      />
 
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
-        <Stat label="Awaiting my action" value={awaiting.length} />
-        <Stat label="My memos in progress" value={counts.submitted} />
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
+        <Stat label="On my desk" value={awaiting.length} emphasis />
+        <Stat label="In progress" value={counts.submitted} />
         <Stat label="Changes requested" value={counts.changes} />
         <Stat label="Approved" value={counts.approved} />
-        <Stat label="Urgent (org-wide)" value={urgentCount} />
+        <Stat label="Urgent, org-wide" value={urgentCount} />
       </div>
 
       <div>
-        <h2 className="mb-2 text-lg font-semibold">Awaiting your action</h2>
+        <SectionHeading count={awaiting.length}>On your desk</SectionHeading>
         <MemoTable memos={awaiting} showAuthor showAge
           emptyText="Nothing needs your action." />
       </div>
 
-      <Card>
-        <CardHeader><CardTitle>Recently completed</CardTitle></CardHeader>
-        <CardContent>
-          {recentCompleted.length === 0 ? (
+      <div>
+        <SectionHeading>Recently closed</SectionHeading>
+        {recentCompleted.length === 0 ? (
+          <div className="rounded-lg border border-dashed border-border bg-card px-4 py-10 text-center">
             <p className="text-sm text-muted-foreground">
-              No completed memos yet.
+              Nothing has finished its approval chain yet.
             </p>
-          ) : (
-            <ul className="space-y-2 text-sm">
-              {recentCompleted.map((m) => (
-                <li key={m.id}>
-                  <Link href={`/memos/${m.id}`} className="underline">
+          </div>
+        ) : (
+          <ul className="divide-y divide-border overflow-hidden rounded-lg border border-border bg-card">
+            {recentCompleted.map((m) => (
+              <li
+                key={m.id}
+                className="group flex flex-wrap items-center justify-between gap-3 px-4 py-3"
+              >
+                <div className="min-w-0">
+                  <Link
+                    href={`/memos/${m.id}`}
+                    className="text-sm font-medium underline-offset-4 group-hover:underline"
+                  >
                     {m.subject}
-                  </Link>{" "}
-                  — {m.status} · by {people.get(m.authorId)?.fullName}
-                </li>
-              ))}
-            </ul>
-          )}
-        </CardContent>
-      </Card>
+                  </Link>
+                  <p className="mt-0.5 font-mono text-xs text-muted-foreground">
+                    {m.memoNumber ?? "—"} · {people.get(m.authorId)?.fullName}
+                  </p>
+                </div>
+                <StatusBadge status={m.status} />
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
     </div>
   );
 }

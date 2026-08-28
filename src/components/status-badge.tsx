@@ -1,35 +1,69 @@
-import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
+// Colour here is meaning, not decoration: each workflow state gets exactly one
+// ink, used consistently everywhere the state appears.
 const statusStyles: Record<string, string> = {
-  Draft: "bg-slate-200 text-slate-800 hover:bg-slate-200",
-  Submitted: "bg-blue-100 text-blue-800 hover:bg-blue-100",
-  "Pending Review": "bg-amber-100 text-amber-800 hover:bg-amber-100",
-  "Pending Approval": "bg-amber-100 text-amber-800 hover:bg-amber-100",
-  "Changes Requested": "bg-orange-100 text-orange-800 hover:bg-orange-100",
-  Rejected: "bg-red-100 text-red-800 hover:bg-red-100",
-  Approved: "bg-green-100 text-green-800 hover:bg-green-100",
-  Cancelled: "bg-slate-100 text-slate-500 hover:bg-slate-100",
+  Draft: "border-state-draft/25 bg-state-draft-wash text-state-draft",
+  Submitted: "border-state-pending/30 bg-state-pending-wash text-state-pending",
+  "Pending Review":
+    "border-state-pending/30 bg-state-pending-wash text-state-pending",
+  "Pending Approval":
+    "border-state-pending/30 bg-state-pending-wash text-state-pending",
+  "Changes Requested":
+    "border-state-changes/30 bg-state-changes-wash text-state-changes",
+  Rejected:
+    "border-state-rejected/30 bg-state-rejected-wash text-state-rejected",
+  Approved:
+    "border-state-approved/30 bg-state-approved-wash text-state-approved",
+  Cancelled: "border-border bg-muted text-muted-foreground line-through",
 };
 
-export function StatusBadge({ status }: { status: string }) {
+export function StatusBadge({
+  status,
+  className,
+}: {
+  status: string;
+  className?: string;
+}) {
   return (
-    <Badge className={cn("font-medium", statusStyles[status] ?? "")}>
+    <span className={cn("stamp", statusStyles[status] ?? "", className)}>
       {status}
-    </Badge>
+    </span>
+  );
+}
+
+// Only the terminal outcomes are struck across a memo header. An in-progress
+// memo has nothing to stamp yet.
+export function TerminalStamp({ status }: { status: string }) {
+  if (status !== "Approved" && status !== "Rejected") return null;
+  return (
+    <span
+      className={cn(
+        "stamp-terminal",
+        status === "Approved"
+          ? "border-state-approved/50 text-state-approved"
+          : "border-state-rejected/50 text-state-rejected"
+      )}
+    >
+      {status}
+    </span>
   );
 }
 
 const priorityStyles: Record<string, string> = {
-  Normal: "bg-slate-100 text-slate-700 hover:bg-slate-100",
-  High: "bg-amber-100 text-amber-800 hover:bg-amber-100",
-  Urgent: "bg-red-100 text-red-800 hover:bg-red-100",
+  Normal: "border-border bg-muted text-muted-foreground",
+  High: "border-state-pending/30 bg-state-pending-wash text-state-pending",
+  Urgent: "border-state-rejected/40 bg-state-rejected-wash text-state-rejected",
 };
 
 export function PriorityBadge({ priority }: { priority: string }) {
+  // Normal is the default state of every memo — saying so on each row is noise.
+  if (priority === "Normal") {
+    return <span className="text-xs text-muted-foreground">—</span>;
+  }
   return (
-    <Badge className={cn("font-medium", priorityStyles[priority] ?? "")}>
+    <span className={cn("stamp", priorityStyles[priority] ?? "")}>
       {priority}
-    </Badge>
+    </span>
   );
 }

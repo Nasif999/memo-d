@@ -1,3 +1,4 @@
+import { PageHeader } from "@/components/page-header";
 import { requireAdmin } from "@/lib/auth";
 import { listOrgProfiles, listDepartments, getOrg } from "@/lib/data";
 import { UsersAdmin } from "@/components/admin/users-admin";
@@ -12,7 +13,11 @@ export default async function AdminUsersPage() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-bold">Users</h1>
+      <PageHeader
+        eyebrow="Administration"
+        title="Users"
+        description="Invite colleagues, review join requests, and assign roles."
+      />
       <UsersAdmin
         users={users.map((u) => ({
           id: u.id,

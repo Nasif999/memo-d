@@ -1,4 +1,5 @@
 import { format } from "date-fns";
+import { PageHeader } from "@/components/page-header";
 import { requireAdmin } from "@/lib/auth";
 import { listAudit, profilesMap } from "@/lib/data";
 import {
@@ -14,7 +15,11 @@ export default async function AuditLogPage() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-bold">Audit Log</h1>
+      <PageHeader
+        eyebrow="Administration"
+        title="Audit log"
+        description="Every recorded action, in the order it happened."
+      />
       <p className="text-sm text-muted-foreground">
         Immutable record of significant system events (latest 200).
       </p>

@@ -45,9 +45,16 @@ const MODES: { key: Mode; label: string; blurb: string }[] = [
   },
 ];
 
-export function SignupForm({ orgs }: { orgs: { id: string; name: string }[] }) {
+export function SignupForm({
+  orgs,
+  invitedCode = "",
+}: {
+  orgs: { id: string; name: string }[];
+  invitedCode?: string;
+}) {
   const router = useRouter();
-  const [mode, setMode] = useState<Mode>("create");
+  // Arriving through an invite link opens straight on the join tab.
+  const [mode, setMode] = useState<Mode>(invitedCode ? "code" : "create");
   const [form, setForm] = useState({
     orgName: "",
     identifier: "",
@@ -55,7 +62,7 @@ export function SignupForm({ orgs }: { orgs: { id: string; name: string }[] }) {
     email: "",
     password: "",
     designation: "",
-    joinCode: "",
+    joinCode: invitedCode,
     orgId: "",
   });
   const [error, setError] = useState<string | null>(null);
@@ -154,6 +161,14 @@ export function SignupForm({ orgs }: { orgs: { id: string; name: string }[] }) {
         <CardDescription>{active.blurb}</CardDescription>
       </CardHeader>
       <CardContent>
+        {invitedCode && (
+          <p className="mb-4 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-muted-foreground">
+            You were invited with the code{" "}
+            <span className="font-mono font-medium">{invitedCode}</span>. Fill in
+            your details below to join.
+          </p>
+        )}
+
         <div className="mb-6 grid grid-cols-3 gap-1 rounded-lg bg-slate-100 p-1">
           {MODES.map((m) => (
             <button

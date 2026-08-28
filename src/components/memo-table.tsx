@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { format, formatDistanceToNow } from "date-fns";
+import { format, formatDistanceToNowStrict } from "date-fns";
 import { StatusBadge, PriorityBadge } from "@/components/status-badge";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
@@ -30,51 +30,70 @@ export function MemoTable({
   showAge?: boolean;
   emptyText?: string;
 }) {
+  // An empty screen is an invitation, so it gets the same ruled frame as a
+  // full one rather than a bare line of grey text.
   if (memos.length === 0) {
-    return <p className="p-4 text-sm text-muted-foreground">{emptyText}</p>;
+    return (
+      <div className="rounded-lg border border-dashed border-border bg-card px-4 py-10 text-center">
+        <p className="text-sm text-muted-foreground">{emptyText}</p>
+      </div>
+    );
   }
   return (
-    <div className="overflow-x-auto rounded-md border bg-white">
+    <div className="overflow-hidden rounded-lg border border-border bg-card">
       <Table>
         <TableHeader>
-          <TableRow>
-            <TableHead>Number</TableHead>
+          <TableRow className="hover:bg-transparent">
+            <TableHead>Reference</TableHead>
             <TableHead>Subject</TableHead>
             {showAuthor && <TableHead>From</TableHead>}
-            <TableHead>Dept</TableHead>
+            <TableHead>Department</TableHead>
             <TableHead>Priority</TableHead>
             <TableHead>Status</TableHead>
             <TableHead>Submitted</TableHead>
-            {showAge && <TableHead>Pending for</TableHead>}
+            {showAge && <TableHead>Waiting</TableHead>}
           </TableRow>
         </TableHeader>
         <TableBody>
           {memos.map((m) => (
-            <TableRow key={m.id}>
-              <TableCell className="whitespace-nowrap font-mono text-xs">
+            <TableRow key={m.id} className="group">
+              <TableCell className="whitespace-nowrap px-3 font-mono text-xs text-muted-foreground tabular">
                 {m.memo_number ?? "—"}
               </TableCell>
-              <TableCell>
-                <Link href={`/memos/${m.id}`} className="font-medium underline">
+              <TableCell className="px-3">
+                <Link
+                  href={`/memos/${m.id}`}
+                  className="font-medium underline-offset-4 group-hover:underline"
+                >
                   {m.subject}
                 </Link>
                 {m.current_participant && (
-                  <p className="text-xs text-muted-foreground">
-                    with {m.current_participant}
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    on {m.current_participant}&apos;s desk
                   </p>
                 )}
               </TableCell>
-              {showAuthor && <TableCell>{m.author_name}</TableCell>}
-              <TableCell>{m.department_name ?? "—"}</TableCell>
-              <TableCell><PriorityBadge priority={m.priority} /></TableCell>
-              <TableCell><StatusBadge status={m.status} /></TableCell>
-              <TableCell className="whitespace-nowrap text-sm">
-                {m.submitted_at ? format(new Date(m.submitted_at), "PP") : "—"}
+              {showAuthor && (
+                <TableCell className="px-3 text-sm">{m.author_name}</TableCell>
+              )}
+              <TableCell className="px-3 text-sm text-muted-foreground">
+                {m.department_name ?? "—"}
+              </TableCell>
+              <TableCell className="px-3">
+                <PriorityBadge priority={m.priority} />
+              </TableCell>
+              <TableCell className="px-3">
+                <StatusBadge status={m.status} />
+              </TableCell>
+              <TableCell className="whitespace-nowrap px-3 font-mono text-xs text-muted-foreground tabular">
+                {m.submitted_at
+                  ? format(new Date(m.submitted_at), "dd MMM yyyy")
+                  : "—"}
               </TableCell>
               {showAge && (
-                <TableCell className="whitespace-nowrap text-sm">
+                <TableCell className="whitespace-nowrap px-3 font-mono text-xs text-muted-foreground tabular">
                   {m.submitted_at
-                    ? formatDistanceToNow(new Date(m.submitted_at))
+                    ? formatDistanceToNowStrict(new Date(m.submitted_at))
                     : "—"}
                 </TableCell>
               )}

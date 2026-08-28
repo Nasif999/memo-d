@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { PageHeader } from "@/components/page-header";
 import { requireAdmin } from "@/lib/auth";
 import {
   getOrg,
@@ -13,12 +14,12 @@ import { OrgForm } from "@/components/admin/org-form";
 
 function Stat({ label, value }: { label: string; value: number }) {
   return (
-    <Card>
-      <CardContent className="pt-6">
-        <p className="text-3xl font-bold">{value}</p>
-        <p className="text-sm text-muted-foreground">{label}</p>
-      </CardContent>
-    </Card>
+    <div className="rounded-lg border border-border bg-card px-4 py-3.5">
+      <p className="font-mono text-2xl font-semibold leading-none tabular">
+        {value}
+      </p>
+      <p className="eyebrow mt-2 block leading-tight">{label}</p>
+    </div>
   );
 }
 
@@ -50,7 +51,11 @@ export default async function AdminPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold">Administration</h1>
+      <PageHeader
+        eyebrow="Organization settings"
+        title="Administration"
+        description="Manage who belongs to this organization and how memos are filed."
+      />
 
       <div className="grid grid-cols-2 gap-4 md:grid-cols-7">
         <Stat label="Users" value={users.length} />

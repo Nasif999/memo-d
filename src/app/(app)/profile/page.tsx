@@ -1,3 +1,4 @@
+import { PageHeader } from "@/components/page-header";
 import { requireProfile } from "@/lib/auth";
 import { getOrg, listDepartments } from "@/lib/data";
 import { ProfileForm } from "@/components/profile-form";
@@ -13,7 +14,11 @@ export default async function ProfilePage() {
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
-      <h1 className="text-2xl font-bold">My Profile</h1>
+      <PageHeader
+        eyebrow="Your account"
+        title="Profile"
+        description="How your name and title appear on every memo you touch."
+      />
       <ProfileForm
         profile={{
           full_name: profile.fullName,

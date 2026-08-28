@@ -1,3 +1,4 @@
+import { PageHeader } from "@/components/page-header";
 import { requireAdmin } from "@/lib/auth";
 import { listOrgMemos, listDepartments, listCategories } from "@/lib/data";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -78,7 +79,11 @@ export default async function AdminReportsPage({
 
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-bold">Reports</h1>
+      <PageHeader
+        eyebrow="Administration"
+        title="Reports"
+        description="How memos are moving through your organization."
+      />
 
       <form className="flex flex-wrap items-end gap-3 rounded-md border bg-white p-4">
         <div className="space-y-1">

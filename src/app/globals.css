@@ -2,28 +2,45 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+  Registry palette. Ink on cool paper, hairline rules, and colour reserved
+  entirely for workflow state — if something is coloured here, it means
+  something. Values are HSL triplets so Tailwind can compose opacities.
+*/
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 0 0% 3.9%;
+    --background: 220 20% 97%;      /* paper — the page ground */
+    --foreground: 222 38% 10%;      /* ink */
     --card: 0 0% 100%;
-    --card-foreground: 0 0% 3.9%;
+    --card-foreground: 222 38% 10%;
     --popover: 0 0% 100%;
-    --popover-foreground: 0 0% 3.9%;
-    --primary: 0 0% 9%;
-    --primary-foreground: 0 0% 98%;
-    --secondary: 0 0% 96.1%;
-    --secondary-foreground: 0 0% 9%;
-    --muted: 0 0% 96.1%;
-    --muted-foreground: 0 0% 45.1%;
-    --accent: 0 0% 96.1%;
-    --accent-foreground: 0 0% 9%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 0 0% 89.8%;
-    --input: 0 0% 89.8%;
-    --ring: 0 0% 3.9%;
-    --radius: 0.5rem;
+    --popover-foreground: 222 38% 10%;
+    --primary: 222 38% 12%;         /* ink-black actions */
+    --primary-foreground: 0 0% 100%;
+    --secondary: 220 18% 94%;
+    --secondary-foreground: 222 30% 16%;
+    --muted: 220 18% 95%;
+    --muted-foreground: 218 12% 42%;
+    --accent: 220 18% 94%;
+    --accent-foreground: 222 30% 16%;
+    --destructive: 4 71% 41%;       /* stamp red */
+    --destructive-foreground: 0 0% 100%;
+    --border: 218 20% 89%;
+    --input: 218 20% 86%;
+    --ring: 222 38% 20%;
+    --radius: 0.375rem;
+
+    /* Workflow state. Each pairs a saturated ink with a wash for its ground. */
+    --state-draft: 218 15% 34%;
+    --state-draft-wash: 220 18% 94%;
+    --state-pending: 36 100% 27%;
+    --state-pending-wash: 40 78% 93%;
+    --state-changes: 268 45% 44%;
+    --state-changes-wash: 268 52% 96%;
+    --state-rejected: 4 71% 41%;
+    --state-rejected-wash: 6 70% 96%;
+    --state-approved: 164 78% 27%;
+    --state-approved-wash: 162 44% 94%;
   }
 }
 
@@ -33,5 +50,56 @@
   }
   body {
     @apply bg-background text-foreground;
+  }
+  /* Identifiers are records: numbers, codes and references never reflow. */
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@layer components {
+  /*
+    Eyebrow: the small caption above a heading. Set in mono so it reads as a
+    form-field caption rather than decoration.
+  */
+  .eyebrow {
+    @apply font-mono text-[0.6875rem] font-medium uppercase tracking-[0.14em] text-muted-foreground;
+  }
+
+  /*
+    Stamp: how every workflow state is rendered — a struck mark, not a pill.
+    Squared off, ruled, uppercase mono.
+  */
+  .stamp {
+    @apply inline-flex items-center gap-1.5 rounded-[3px] border px-1.5 py-0.5 font-mono text-[0.6875rem] font-medium uppercase tracking-[0.08em] whitespace-nowrap;
+  }
+
+  /*
+    Terminal stamp: the one bold move. A finished memo gets its outcome struck
+    across the header the way a rubber stamp lands on paper — off-axis, ruled
+    heavy, and only ever for Approved or Rejected.
+  */
+  .stamp-terminal {
+    @apply inline-flex -rotate-3 items-center rounded-[2px] border-[2.5px] px-2.5 py-1 font-mono text-sm font-semibold uppercase tracking-[0.18em];
+  }
+
+  /* Document header block: the FROM/REF/DATE grid on a real memo. */
+  .doc-field {
+    @apply flex flex-col gap-1 border-l-2 border-border pl-3;
+  }
+  .doc-field dt {
+    @apply font-mono text-[0.625rem] font-medium uppercase tracking-[0.14em] text-muted-foreground;
+  }
+  .doc-field dd {
+    @apply text-sm font-medium leading-tight;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
   }
 }

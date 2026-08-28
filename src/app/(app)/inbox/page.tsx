@@ -1,5 +1,6 @@
 import { requireProfile } from "@/lib/auth";
 import { listInboxMemos, profilesMap, listDepartments } from "@/lib/data";
+import { PageHeader } from "@/components/page-header";
 import { MemoTable, type MemoRow } from "@/components/memo-table";
 
 export default async function InboxPage() {
@@ -33,7 +34,11 @@ export default async function InboxPage() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-bold">Inbox</h1>
+      <PageHeader
+        eyebrow="Awaiting your decision"
+        title="Inbox"
+        description="Memos that have reached your step and cannot move until you act."
+      />
       <p className="text-sm text-muted-foreground">
         Memos awaiting your action.
       </p>

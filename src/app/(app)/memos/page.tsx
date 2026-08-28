@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { requireProfile } from "@/lib/auth";
 import { listMemosByAuthor, profilesMap, listDepartments } from "@/lib/data";
+import { PageHeader } from "@/components/page-header";
 import { MemoTable, type MemoRow } from "@/components/memo-table";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -39,7 +40,11 @@ export default async function MyMemosPage() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">My Memos</h1>
+        <PageHeader
+          eyebrow="Authored by you"
+          title="My memos"
+          description="Everything you have written, from draft to final decision."
+        />
         <Link href="/memos/new">
           <Button>+ New Memo</Button>
         </Link>

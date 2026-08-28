@@ -8,7 +8,23 @@ const config: Config = {
   ],
   theme: {
     extend: {
+      fontFamily: {
+        sans: ["var(--font-sans)", "ui-sans-serif", "system-ui", "sans-serif"],
+        mono: ["var(--font-mono)", "ui-monospace", "SFMono-Regular", "monospace"],
+      },
       colors: {
+        state: {
+          draft: "hsl(var(--state-draft))",
+          "draft-wash": "hsl(var(--state-draft-wash))",
+          pending: "hsl(var(--state-pending))",
+          "pending-wash": "hsl(var(--state-pending-wash))",
+          changes: "hsl(var(--state-changes))",
+          "changes-wash": "hsl(var(--state-changes-wash))",
+          rejected: "hsl(var(--state-rejected))",
+          "rejected-wash": "hsl(var(--state-rejected-wash))",
+          approved: "hsl(var(--state-approved))",
+          "approved-wash": "hsl(var(--state-approved-wash))",
+        },
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
         ring: "hsl(var(--ring))",

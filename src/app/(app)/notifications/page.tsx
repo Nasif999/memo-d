@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { format } from "date-fns";
 import { revalidatePath } from "next/cache";
+import { PageHeader } from "@/components/page-header";
 import { requireProfile } from "@/lib/auth";
 import { listNotifications } from "@/lib/data";
 import { Button } from "@/components/ui/button";
@@ -23,7 +24,11 @@ export default async function NotificationsPage() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Notifications</h1>
+        <PageHeader
+        eyebrow="Activity on memos you touch"
+        title="Notifications"
+        description="Every time a memo reaches you or moves on from you."
+      />
         <form action={markAllRead}>
           <Button variant="outline" size="sm" type="submit">
             Mark all read
