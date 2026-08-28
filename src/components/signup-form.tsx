@@ -6,6 +6,10 @@ import { useRouter } from "next/navigation";
 import { signInWithEmailAndPassword } from "firebase/auth";
 import { firebaseAuth } from "@/lib/firebase/client";
 import {
+  DESIGNATION_SUGGESTIONS,
+  DESIGNATION_LIST_ID,
+} from "@/lib/designations";
+import {
   registerOrganization,
   joinWithCode,
   requestToJoin,
@@ -271,12 +275,19 @@ export function SignupForm({ orgs }: { orgs: { id: string; name: string }[] }) {
                 <Label htmlFor="designation">Designation</Label>
                 <Input
                   id="designation"
+                  list={DESIGNATION_LIST_ID}
                   value={form.designation}
                   onChange={set("designation")}
                   placeholder={
                     mode === "create" ? "Administrator" : "Head of Finance"
                   }
                 />
+                {/* Suggestions only — any other title can still be typed. */}
+                <datalist id={DESIGNATION_LIST_ID}>
+                  {DESIGNATION_SUGGESTIONS.map((d) => (
+                    <option key={d} value={d} />
+                  ))}
+                </datalist>
               </div>
             </div>
             <div className="space-y-2">
