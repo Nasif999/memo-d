@@ -22,6 +22,7 @@ export default async function InboxPage() {
     submitted_at: m.submittedAt,
     author_name: people.get(m.authorId)?.fullName,
     department_name: m.departmentId ? deptName.get(m.departmentId) : undefined,
+    version: m.currentVersion,
     required_action: "Review / Approve",
   }));
 

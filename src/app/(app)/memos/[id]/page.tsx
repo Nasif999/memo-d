@@ -104,6 +104,14 @@ export default async function MemoDetailsPage({
               <p className="eyebrow">{memo.memoNumber ?? "Unfiled draft"}</p>
               <StatusBadge status={memo.status} />
               <PriorityBadge priority={memo.priority} />
+              {memo.currentVersion > 1 && (
+                <span
+                  className="stamp border-state-changes/30 bg-state-changes-wash text-state-changes"
+                  title="This memo was sent back and has been revised"
+                >
+                  Revised · v{memo.currentVersion}
+                </span>
+              )}
             </div>
             <h1 className="text-2xl font-semibold leading-tight tracking-tight">
               {memo.subject}

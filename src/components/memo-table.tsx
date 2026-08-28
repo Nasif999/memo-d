@@ -17,6 +17,9 @@ export type MemoRow = {
   department_name?: string;
   current_participant?: string;
   required_action?: string;
+  // > 1 once a memo has been sent back and resubmitted at least once — the
+  // person acting on it should know this isn't a first pass.
+  version?: number;
 };
 
 export function MemoTable({
@@ -73,6 +76,14 @@ export function MemoTable({
                 <span className="font-medium underline-offset-4 group-hover:underline">
                   {m.subject}
                 </span>
+                {m.version !== undefined && m.version > 1 && (
+                  <span
+                    className="stamp ml-2 border-state-changes/30 bg-state-changes-wash text-state-changes"
+                    title={`Sent back and revised — this is version ${m.version}`}
+                  >
+                    Revised · v{m.version}
+                  </span>
+                )}
                 {m.current_participant && (
                   <p className="mt-0.5 text-xs text-muted-foreground">
                     on {m.current_participant}&apos;s desk

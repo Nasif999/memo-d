@@ -27,6 +27,7 @@ export default async function MyMemosPage() {
     current_participant: m.currentAssigneeId
       ? people.get(m.currentAssigneeId)?.fullName
       : undefined,
+    version: m.currentVersion,
   }));
 
   const drafts = rows.filter((r) => r.status === "Draft");

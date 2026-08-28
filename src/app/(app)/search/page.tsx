@@ -69,6 +69,7 @@ export default async function SearchPage({
       submitted_at: m.submittedAt,
       author_name: people.get(m.authorId)?.fullName,
       department_name: m.departmentId ? deptName.get(m.departmentId) : undefined,
+      version: m.currentVersion,
     }));
   }
 
