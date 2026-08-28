@@ -113,7 +113,7 @@ export default async function DashboardPage() {
         <Stat label="On my desk" value={awaiting.length} emphasis />
         <Stat label="In progress" value={counts.submitted} />
         <Stat label="Changes requested" value={counts.changes} />
-        <Stat label="Approved" value={counts.approved} />
+        <Stat label="My approved" value={counts.approved} />
         <Stat label="Urgent, org-wide" value={urgentCount} />
       </div>
 
