@@ -65,13 +65,23 @@ export async function notifyUser(
   userId: string,
   type: string,
   memoId: string | null,
-  message: string
+  message: string,
+  link: string | null = null
 ) {
   await db().collection("notifications").add({
-    orgId, userId, type, memoId, message,
+    orgId, userId, type, memoId, message, link,
     isRead: false,
     createdAt: FieldValue.serverTimestamp(),
   });
+}
+
+// Every active admin of an org — used to notify all of them about
+// organization-level events (join requests) rather than a single person.
+export async function listActiveAdmins(orgId: string) {
+  const docs = await docsByOrg("profiles", orgId);
+  return docs
+    .filter((d) => d.data().role === "org_admin" && d.data().status === "active")
+    .map((d) => d.id);
 }
 
 export async function getProfile(uid: string): Promise<Profile | null> {
@@ -943,6 +953,7 @@ export async function listNotifications(uid: string) {
         id: d.id,
         type: n.type as string,
         memoId: (n.memoId ?? null) as string | null,
+        link: (n.link ?? null) as string | null,
         message: n.message as string,
         isRead: n.isRead as boolean,
         createdAt: tsToIso(n.createdAt),

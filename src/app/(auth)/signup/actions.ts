@@ -3,7 +3,7 @@
 import { z } from "zod";
 import { FieldValue } from "firebase-admin/firestore";
 import { adminAuth, db } from "@/lib/firebase/admin";
-import { logAudit, listJoinableOrgs } from "@/lib/data";
+import { logAudit, listJoinableOrgs, listActiveAdmins, notifyUser } from "@/lib/data";
 
 // Public, unauthenticated endpoint: registers a new tenant and its first
 // administrator. It can only ever create a brand-new organization — it never
@@ -200,6 +200,25 @@ async function createMember(
   }
 
   await logAudit(orgId, uid, "join_requested", "user", uid, input.email);
+
+  // Pending applicants can't sign in to see anything, so the only people who
+  // can act on this are the org's admins — notify every one of them.
+  if (status === "pending") {
+    const adminIds = await listActiveAdmins(orgId);
+    await Promise.all(
+      adminIds.map((adminId) =>
+        notifyUser(
+          orgId,
+          adminId,
+          "join_requested",
+          null,
+          `${input.fullName} requested to join your organization`,
+          "/admin/users"
+        )
+      )
+    );
+  }
+
   return {};
 }
 

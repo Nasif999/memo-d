@@ -54,6 +54,10 @@ export default async function NotificationsPage() {
                     <Link href={`/memos/${n.memoId}`} className="underline">
                       {n.message}
                     </Link>
+                  ) : n.link ? (
+                    <Link href={n.link} className="underline">
+                      {n.message}
+                    </Link>
                   ) : (
                     n.message
                   )}
