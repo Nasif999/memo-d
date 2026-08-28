@@ -11,18 +11,17 @@ PDF export. Built for CSE226 (Foundations of Vibe Coding), North South Universit
 | Frontend + backend | Next.js 14 (App Router, TypeScript, Server Actions) |
 | Database | Cloud Firestore (via Firebase Admin SDK, server-side only) |
 | Authentication | Firebase Authentication (email + password, session cookies) |
-| File storage | Firebase Storage (private bucket, signed URLs) |
+| File storage | Cloud Firestore (chunked binary, served through an authorized route) |
 | UI | Tailwind CSS + shadcn/ui + Tiptap rich text editor |
 | PDF export | @react-pdf/renderer |
 | Hosting | Vercel |
 
 ## Multi-Tenancy & Security Model
 
-- **The browser never touches Firestore or Storage.** All data access runs
+- **The browser never touches Firestore directly.** All data access runs
   server-side through the Firebase Admin SDK after verifying the caller's
-  httpOnly session cookie. Firestore and Storage security rules **deny all
-  client access** (`firestore.rules`, `storage.rules`) — a leaked web API key
-  gives an attacker nothing.
+  httpOnly session cookie. Firestore security rules **deny all client access**
+  (`firestore.rules`) — a leaked web API key gives an attacker nothing.
 - Every tenant-scoped document carries an `orgId`; every server-side read/write
   filters or checks it against the verified caller's org. Cross-org requests
   return "not found."
@@ -33,8 +32,10 @@ PDF export. Built for CSE226 (Foundations of Vibe Coding), North South Universit
   `/api/auth/session` for an httpOnly, `secure`, `sameSite` session cookie.
   Deactivated accounts cannot establish sessions and existing refresh tokens
   are revoked on deactivation.
-- Attachments live in a private bucket; downloads require a server-side access
-  check that issues a 60-second signed URL.
+- Attachment bytes are stored in Firestore, base64-split across sub-1 MiB chunk
+  documents. There is no public URL at all: downloads are streamed back only
+  after a server-side tenant and visibility check, so guessing an id gains
+  nothing. Uploads are capped at 5 MB and restricted by MIME type.
 - Passwords are hashed and managed by Firebase Auth. HTTPS via Vercel.
 - Comments and audit log entries are written once and never updated or deleted
   by user-reachable code paths.
@@ -60,10 +61,9 @@ npm install
 2. **Authentication → Sign-in method**: enable **Email/Password**.
 3. **Firestore Database**: create a database (production mode). Publish the
    contents of `firestore.rules` (deny-all) as the rules.
-4. **Storage**: create the default bucket. Publish `storage.rules` (deny-all).
-5. **Project settings → General → Your apps**: add a Web app and note the
+4. **Project settings → General → Your apps**: add a Web app and note the
    `apiKey`, `authDomain`, `projectId`.
-6. **Project settings → Service accounts**: Generate new private key
+5. **Project settings → Service accounts**: Generate new private key
    (downloads a JSON file).
 
 ### 4. Configure environment variables
@@ -78,7 +78,6 @@ cp .env.example .env.local
 | `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN` | Web app `authDomain` |
 | `NEXT_PUBLIC_FIREBASE_PROJECT_ID` | Web app `projectId` |
 | `FIREBASE_SERVICE_ACCOUNT_JSON` | The **entire** service-account JSON, as one line |
-| `FIREBASE_STORAGE_BUCKET` | Bucket name, e.g. `your-project.firebasestorage.app` |
 
 ### 5. Seed demo data
 
@@ -105,7 +104,7 @@ npm run build && npm start
 ## Deployment (Vercel)
 
 1. Push this repo to GitHub.
-2. Import it in Vercel and set the five environment variables above
+2. Import it in Vercel and set the four environment variables above
    (paste the service-account JSON as a single line).
 3. Deploy — no other configuration needed.
 
@@ -140,3 +139,8 @@ request changes. The timeline, notifications, and audit log update at every step
 - Reports are tabular counts; no charts or CSV export.
 - Search is server-side substring matching over org-scoped data (fine at demo
   scale; a dedicated search index would be needed for large datasets).
+- Attachments are capped at 5 MB each because file bytes are stored in
+  Firestore rather than object storage. This keeps the project entirely within
+  Firebase's free tier (Cloud Storage now requires a billing account). Moving
+  to object storage would only require replacing `saveAttachment` /
+  `readAttachment` in `src/lib/data.ts`.

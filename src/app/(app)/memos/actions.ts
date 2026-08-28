@@ -11,6 +11,7 @@ import {
   performWorkflowActionTx,
   addGeneralComment,
   cancelMemoTx,
+  deleteAttachment,
   logAudit,
   type WorkflowAction,
 } from "@/lib/data";
@@ -128,6 +129,25 @@ export async function addComment(memoId: string, body: string) {
   if (!text.success) return { error: "Comment text required." };
   const res = await addGeneralComment(memoId, profile, text.data);
   if (res.error) return { error: res.error };
+  revalidatePath(`/memos/${memoId}`);
+  return { ok: true };
+}
+
+export async function removeAttachment(memoId: string, attachmentId: string) {
+  const profile = await requireProfile();
+  const snap = await db().collection("memos").doc(memoId).get();
+  const memo = snap.data();
+  // Only the author may remove an attachment, and only while editable.
+  if (
+    !memo ||
+    memo.orgId !== profile.orgId ||
+    memo.authorId !== profile.id ||
+    !["Draft", "Changes Requested"].includes(memo.status)
+  ) {
+    return { error: "Could not remove attachment." };
+  }
+  await deleteAttachment(memoId, attachmentId);
+  await logAudit(profile.orgId, profile.id, "attachment_deleted", "memo", memoId, attachmentId);
   revalidatePath(`/memos/${memoId}`);
   return { ok: true };
 }

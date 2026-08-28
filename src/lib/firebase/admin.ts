@@ -2,17 +2,13 @@ import "server-only";
 import { initializeApp, getApps, getApp, cert } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
 import { getFirestore } from "firebase-admin/firestore";
-import { getStorage } from "firebase-admin/storage";
 
 function adminApp() {
   if (getApps().length) return getApp();
   const serviceAccount = JSON.parse(
     process.env.FIREBASE_SERVICE_ACCOUNT_JSON!
   );
-  return initializeApp({
-    credential: cert(serviceAccount),
-    storageBucket: process.env.FIREBASE_STORAGE_BUCKET,
-  });
+  return initializeApp({ credential: cert(serviceAccount) });
 }
 
 export function adminAuth() {
@@ -27,8 +23,4 @@ export function db() {
     // settings() throws if called twice — safe to ignore
   }
   return firestore;
-}
-
-export function bucket() {
-  return getStorage(adminApp()).bucket();
 }

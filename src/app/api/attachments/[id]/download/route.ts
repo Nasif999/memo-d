@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
-import { db, bucket } from "@/lib/firebase/admin";
 import { getSessionProfile } from "@/lib/auth";
-import { getMemoForUser } from "@/lib/data";
+import { getMemoForUser, readAttachment } from "@/lib/data";
 
 export const runtime = "nodejs";
 
-// Issues a short-lived signed URL after a server-side access check.
-// The bucket is private — this route is the only way to reach a file.
+// Streams the file bytes back only after a server-side access check. There is
+// no public URL and no shareable link — the bytes never leave this route
+// without an authorized session, so guessing an id gains nothing.
 // URL shape: /api/attachments/{attachmentId}/download?memo={memoId}
 export async function GET(
   request: Request,
@@ -18,27 +18,22 @@ export async function GET(
   const memoId = new URL(request.url).searchParams.get("memo");
   if (!memoId) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  // Tenant + visibility check: only memos the caller may see.
+  // Tenant + visibility check: only memos this caller is allowed to see.
   const memo = await getMemoForUser(memoId, profile);
   if (!memo) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  const attSnap = await db()
-    .collection("memos").doc(memoId)
-    .collection("attachments").doc(params.id)
-    .get();
-  const attachment = attSnap.data();
-  if (!attachment) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  const file = await readAttachment(memoId, params.id);
+  if (!file) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  try {
-    const [signedUrl] = await bucket()
-      .file(attachment.storagePath)
-      .getSignedUrl({
-        action: "read",
-        expires: Date.now() + 60_000,
-        responseDisposition: `attachment; filename="${attachment.filename}"`,
-      });
-    return NextResponse.redirect(signedUrl);
-  } catch {
-    return NextResponse.json({ error: "Could not sign URL" }, { status: 500 });
-  }
+  // Quote-strip the filename so it cannot break out of the header.
+  const safeName = file.filename.replace(/["\\\r\n]/g, "_");
+
+  return new NextResponse(new Uint8Array(file.bytes), {
+    headers: {
+      "Content-Type": file.mimeType || "application/octet-stream",
+      "Content-Length": String(file.bytes.length),
+      "Content-Disposition": `attachment; filename="${safeName}"`,
+      "Cache-Control": "private, no-store",
+    },
+  });
 }

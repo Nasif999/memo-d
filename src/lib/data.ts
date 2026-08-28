@@ -362,6 +362,14 @@ export async function listComments(memoId: string) {
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
 }
 
+// ---------- attachments ----------
+// File bytes live in Firestore: base64 split across `chunks` documents, each
+// kept under the 1 MiB per-document limit. Nothing is ever public — downloads
+// are streamed back through an authorization-checked route.
+
+export const ATTACHMENT_MAX_BYTES = 5 * 1024 * 1024;
+const CHUNK_CHARS = 700_000;
+
 export async function listAttachments(memoId: string) {
   const snap = await db().collection("memos").doc(memoId).collection("attachments").get();
   return snap.docs
@@ -369,15 +377,82 @@ export async function listAttachments(memoId: string) {
       const a = d.data();
       return {
         id: d.id,
-        storagePath: a.storagePath as string,
         filename: a.filename as string,
         sizeBytes: a.sizeBytes as number,
         mimeType: a.mimeType as string,
         uploadedBy: a.uploadedBy as string,
+        chunkCount: (a.chunkCount ?? 0) as number,
         createdAt: tsToIso(a.createdAt),
       };
     })
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+}
+
+export async function saveAttachment(
+  memoId: string,
+  actor: Profile,
+  file: { filename: string; mimeType: string; bytes: Buffer }
+) {
+  const base64 = file.bytes.toString("base64");
+  const chunks: string[] = [];
+  for (let i = 0; i < base64.length; i += CHUNK_CHARS) {
+    chunks.push(base64.slice(i, i + CHUNK_CHARS));
+  }
+
+  const attachmentRef = db()
+    .collection("memos").doc(memoId)
+    .collection("attachments").doc();
+
+  // Write chunks first, a couple per commit to stay well under the request
+  // size limit; the metadata document lands last so a partial upload is
+  // never visible to readers.
+  for (let i = 0; i < chunks.length; i += 2) {
+    const batch = db().batch();
+    for (let j = i; j < Math.min(i + 2, chunks.length); j++) {
+      batch.set(
+        attachmentRef.collection("chunks").doc(String(j).padStart(4, "0")),
+        { index: j, data: chunks[j] }
+      );
+    }
+    await batch.commit();
+  }
+
+  await attachmentRef.set({
+    filename: file.filename,
+    sizeBytes: file.bytes.length,
+    mimeType: file.mimeType,
+    uploadedBy: actor.id,
+    chunkCount: chunks.length,
+    createdAt: FieldValue.serverTimestamp(),
+  });
+
+  return attachmentRef.id;
+}
+
+export async function readAttachment(memoId: string, attachmentId: string) {
+  const ref = db()
+    .collection("memos").doc(memoId)
+    .collection("attachments").doc(attachmentId);
+  const snap = await ref.get();
+  if (!snap.exists) return null;
+  const meta = snap.data()!;
+
+  const chunkSnap = await ref.collection("chunks").orderBy("index").get();
+  if (chunkSnap.empty) return null;
+  const base64 = chunkSnap.docs.map((d) => d.data().data as string).join("");
+
+  return {
+    filename: meta.filename as string,
+    mimeType: meta.mimeType as string,
+    bytes: Buffer.from(base64, "base64"),
+  };
+}
+
+export async function deleteAttachment(memoId: string, attachmentId: string) {
+  const ref = db()
+    .collection("memos").doc(memoId)
+    .collection("attachments").doc(attachmentId);
+  await db().recursiveDelete(ref);
 }
 
 export async function listVersions(memoId: string) {
