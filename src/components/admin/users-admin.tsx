@@ -73,13 +73,15 @@ export function UsersAdmin({
     router.refresh();
   }
 
-  // Built in the browser so the link always matches the host actually in use
-  // (localhost in development, the deployed domain in production).
+  // Built client-side so the link always matches whatever host is actually
+  // being browsed — localhost in development, the deployed domain in
+  // production — without needing to know the deploy URL in advance.
   const [origin, setOrigin] = useState("");
   useEffect(() => setOrigin(window.location.origin), []);
-  const inviteLink = joinCode ? `${origin}/signup?code=${joinCode}` : "";
+  const inviteLink = joinCode && origin ? `${origin}/signup?code=${joinCode}` : "";
 
   async function copyInvite() {
+    if (!inviteLink) return;
     try {
       await navigator.clipboard.writeText(inviteLink);
       toast.success("Invite link copied");
@@ -203,10 +205,11 @@ export function UsersAdmin({
               <input
                 readOnly
                 value={inviteLink}
+                placeholder={joinCode ? "Loading…" : ""}
                 onFocus={(e) => e.currentTarget.select()}
-                className="min-w-0 flex-1 rounded-md border bg-slate-50 px-3 py-2 font-mono text-sm"
+                className="min-w-0 flex-1 rounded-md border border-border bg-muted px-3 py-2 font-mono text-sm"
               />
-              <Button size="sm" onClick={copyInvite} disabled={!joinCode}>
+              <Button size="sm" onClick={copyInvite} disabled={!inviteLink}>
                 Copy link
               </Button>
             </div>
@@ -219,7 +222,7 @@ export function UsersAdmin({
           <div className="space-y-2 border-t pt-4">
             <p className="text-sm font-medium">Or share the code</p>
             <div className="flex flex-wrap items-center gap-3">
-              <code className="rounded-md border bg-slate-50 px-3 py-2 font-mono text-lg tracking-wider">
+              <code className="rounded-md border border-border bg-muted px-3 py-2 font-mono text-lg tracking-[0.12em]">
                 {joinCode ?? "—"}
               </code>
               <Button size="sm" variant="outline" onClick={rotateCode}>

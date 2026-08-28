@@ -162,14 +162,14 @@ export function SignupForm({
       </CardHeader>
       <CardContent>
         {invitedCode && (
-          <p className="mb-4 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-muted-foreground">
+          <p className="mb-4 rounded-md border border-border bg-muted px-3 py-2 text-xs text-muted-foreground">
             You were invited with the code{" "}
-            <span className="font-mono font-medium">{invitedCode}</span>. Fill in
-            your details below to join.
+            <span className="font-mono font-medium">{invitedCode}</span>. Fill
+            in your details below to join.
           </p>
         )}
 
-        <div className="mb-6 grid grid-cols-3 gap-1 rounded-lg bg-slate-100 p-1">
+        <div className="mb-6 grid grid-cols-3 gap-1 rounded-lg bg-muted p-1">
           {MODES.map((m) => (
             <button
               key={m.key}
