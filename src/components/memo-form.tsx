@@ -50,10 +50,11 @@ export function MemoForm({
   const [templateId, setTemplateId] = useState("");
   const [busy, setBusy] = useState(false);
 
+  // Templates are the only source of an approval sequence — who fills a slot
+  // is chosen here, but the slots themselves (their order and roles) are
+  // fixed by whichever administrator built the template.
   const selectedTemplate = templates.find((t) => t.id === templateId);
-  const workflowSlots = selectedTemplate
-    ? selectedTemplate.steps.map((s) => s.position_label)
-    : participants.map((_, i) => `Step ${i + 1}`);
+  const workflowSlots = selectedTemplate?.steps.map((s) => s.position_label) ?? [];
 
   function input(): MemoInput {
     return {
@@ -76,15 +77,21 @@ export function MemoForm({
 
   async function handleSubmit() {
     if (!subject.trim()) return toast.error("Subject is required");
-    if (!isResubmit && participants.filter(Boolean).length === 0)
-      return toast.error("Add at least one workflow participant");
+    if (!isResubmit && !selectedTemplate)
+      return toast.error("Choose a workflow template");
+    if (!isResubmit && participants.filter(Boolean).length < workflowSlots.length)
+      return toast.error("Assign someone to every step");
     setBusy(true);
     const res = await saveDraft(input(), existing?.id);
     if ("error" in res && res.error) {
       setBusy(false);
       return toast.error(res.error);
     }
-    const submitRes = await submitMemo(res.id!, isResubmit ? [] : participants.filter(Boolean));
+    const submitRes = await submitMemo(
+      res.id!,
+      isResubmit ? null : templateId,
+      isResubmit ? [] : participants
+    );
     setBusy(false);
     if (submitRes.error) return toast.error(submitRes.error);
     toast.success(isResubmit ? "Memo resubmitted" : "Memo submitted");
@@ -155,51 +162,59 @@ export function MemoForm({
 
       {!isResubmit && (
         <Card>
-          <CardHeader><CardTitle>Approval Workflow</CardTitle></CardHeader>
+          <CardHeader>
+            <CardTitle>Approval Workflow</CardTitle>
+          </CardHeader>
           <CardContent className="space-y-4">
-            {templates.length > 0 && (
-              <div className="space-y-2">
-                <Label>Workflow template (optional)</Label>
-                <select className={selectClass} value={templateId}
-                  onChange={(e) => applyTemplate(e.target.value)}>
-                  <option value="">Custom workflow</option>
-                  {templates.map((t) => (
-                    <option key={t.id} value={t.id}>{t.name}</option>
-                  ))}
-                </select>
-              </div>
-            )}
-            <p className="text-sm text-muted-foreground">
-              The memo passes through these participants in order. Each may
-              approve, reject, comment, or request changes.
-            </p>
-            {workflowSlots.map((label, i) => (
-              <div key={i} className="flex items-center gap-2">
-                <span className="w-32 shrink-0 text-sm font-medium">
-                  {i + 1}. {label}
-                </span>
-                <select className={selectClass} value={participants[i] ?? ""}
-                  onChange={(e) => setParticipant(i, e.target.value)}>
-                  <option value="">Select user</option>
-                  {users.filter((u) => u.id !== currentUserId).map((u) => (
-                    <option key={u.id} value={u.id}>
-                      {u.full_name}{u.designation ? ` — ${u.designation}` : ""}
-                    </option>
-                  ))}
-                </select>
-                {!selectedTemplate && (
-                  <Button type="button" variant="ghost" size="sm"
-                    onClick={() => setParticipants((p) => p.filter((_, j) => j !== i))}>
-                    ✕
-                  </Button>
+            {templates.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                Your organization has no workflow templates yet. Ask an
+                administrator to create one under Admin → Workflow Templates
+                before this memo can be submitted for approval — you can still
+                save it as a draft.
+              </p>
+            ) : (
+              <>
+                <div className="space-y-2">
+                  <Label>Workflow template *</Label>
+                  <select className={selectClass} value={templateId}
+                    onChange={(e) => applyTemplate(e.target.value)}>
+                    <option value="">Select a workflow…</option>
+                    {templates.map((t) => (
+                      <option key={t.id} value={t.id}>{t.name}</option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-muted-foreground">
+                    Your administrator defines who approves and in what order.
+                    Pick the workflow that matches this memo, then assign the
+                    current person for each role below.
+                  </p>
+                </div>
+                {selectedTemplate && (
+                  <div className="space-y-3 border-t pt-4">
+                    <p className="text-sm text-muted-foreground">
+                      The memo passes through these people in order. Each may
+                      approve, reject, comment, or request changes.
+                    </p>
+                    {workflowSlots.map((label, i) => (
+                      <div key={i} className="flex items-center gap-2">
+                        <span className="w-32 shrink-0 text-sm font-medium">
+                          {i + 1}. {label}
+                        </span>
+                        <select className={selectClass} value={participants[i] ?? ""}
+                          onChange={(e) => setParticipant(i, e.target.value)}>
+                          <option value="">Select user</option>
+                          {users.filter((u) => u.id !== currentUserId).map((u) => (
+                            <option key={u.id} value={u.id}>
+                              {u.full_name}{u.designation ? ` — ${u.designation}` : ""}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    ))}
+                  </div>
                 )}
-              </div>
-            ))}
-            {!selectedTemplate && (
-              <Button type="button" variant="outline" size="sm"
-                onClick={() => setParticipants((p) => [...p, ""])}>
-                + Add participant
-              </Button>
+              </>
             )}
           </CardContent>
         </Card>
@@ -211,7 +226,10 @@ export function MemoForm({
             Save as draft
           </Button>
         )}
-        <Button onClick={handleSubmit} disabled={busy}>
+        <Button
+          onClick={handleSubmit}
+          disabled={busy || (!isResubmit && templates.length === 0)}
+        >
           {busy ? "Working…" : isResubmit ? "Resubmit memo" : "Submit for approval"}
         </Button>
       </div>

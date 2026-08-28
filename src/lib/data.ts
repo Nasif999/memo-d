@@ -503,18 +503,39 @@ async function nextMemoNumber(tx: Transaction, orgId: string): Promise<string> {
 export async function submitMemoTx(
   memoId: string,
   actor: Profile,
+  templateId: string | null,
   participantIds: string[]
 ): Promise<{ error?: string }> {
   const memoRef = db().collection("memos").doc(memoId);
 
+  // A workflow's shape (order and roles) comes only from an admin-authored
+  // template — resolved and validated here, before the transaction, so a
+  // fresh submission can never invent its own routing. Resubmission passes no
+  // template because it reuses the workflow the memo already has.
+  let templateSteps: { order: number; label: string }[] | null = null;
+  if (templateId) {
+    const tSnap = await db().collection("templates").doc(templateId).get();
+    const t = tSnap.data();
+    if (!tSnap.exists || t!.orgId !== actor.orgId || t!.isActive === false) {
+      return { error: "That workflow template is not available." };
+    }
+    templateSteps = ((t!.steps ?? []) as { order: number; label: string }[])
+      .slice()
+      .sort((a, b) => a.order - b.order);
+    if (templateSteps.length !== participantIds.length) {
+      return { error: "Assign someone to every step of the workflow." };
+    }
+  }
+
   // Validate participants outside the transaction (reads only).
-  const validated: string[] = [];
-  for (const pid of participantIds) {
+  const validated: { userId: string; positionLabel: string | null }[] = [];
+  for (let i = 0; i < participantIds.length; i++) {
+    const pid = participantIds[i];
     const p = await getProfile(pid);
     if (!p || p.orgId !== actor.orgId || p.status !== "active") {
       return { error: "Invalid workflow participant." };
     }
-    validated.push(pid);
+    validated.push({ userId: pid, positionLabel: templateSteps?.[i]?.label ?? null });
   }
 
   let notifyTarget: string | null = null;
@@ -586,20 +607,21 @@ export async function submitMemoTx(
         });
         recordEvent("resubmitted", version);
       } else {
+        if (!templateId) throw new Error("Choose a workflow template.");
         if (validated.length === 0) throw new Error("Workflow requires at least one participant.");
         if (stepsSnap.size > 0) throw new Error("Workflow already exists.");
-        validated.forEach((pid, i) => {
+        validated.forEach((v, i) => {
           tx.set(memoRef.collection("steps").doc(), {
             order: i + 1,
-            assignedUserId: pid,
-            positionLabel: null,
+            assignedUserId: v.userId,
+            positionLabel: v.positionLabel,
             status: i === 0 ? "Active" : "Pending",
             actedAt: null,
             comment: null,
             actedOnBehalfOf: null,
           });
         });
-        firstAssignee = validated[0];
+        firstAssignee = validated[0].userId;
         tx.set(memoRef.collection("versions").doc("1"), {
           versionNumber: 1,
           subject: memo.subject,
@@ -612,7 +634,7 @@ export async function submitMemoTx(
           status: "Pending Approval",
           currentStepOrder: 1,
           currentAssigneeId: firstAssignee,
-          participantIds: validated,
+          participantIds: validated.map((v) => v.userId),
           currentVersion: 1,
           memoNumber,
           submittedAt: FieldValue.serverTimestamp(),

@@ -94,10 +94,15 @@ export async function deleteDraft(memoId: string) {
   redirect("/memos");
 }
 
-export async function submitMemo(memoId: string, participantIds: string[]) {
+export async function submitMemo(
+  memoId: string,
+  templateId: string | null,
+  participantIds: string[]
+) {
   const profile = await requireProfile();
   const ids = z.array(z.string().min(1)).parse(participantIds);
-  const res = await submitMemoTx(memoId, profile, ids);
+  const tid = templateId ? z.string().min(1).parse(templateId) : null;
+  const res = await submitMemoTx(memoId, profile, tid, ids);
   if (res.error) return { error: res.error };
   revalidatePath(`/memos/${memoId}`);
   revalidatePath("/memos");
