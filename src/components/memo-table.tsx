@@ -56,17 +56,23 @@ export function MemoTable({
         </TableHeader>
         <TableBody>
           {memos.map((m) => (
-            <TableRow key={m.id} className="group">
+            // "relative" on the row (not the cell) makes the row itself the
+            // positioning context, so a single absolutely-positioned link
+            // inside the first cell can stretch to cover the whole row —
+            // click anywhere, not just the subject text.
+            <TableRow key={m.id} className="group relative cursor-pointer">
               <TableCell className="whitespace-nowrap px-3 font-mono text-xs text-muted-foreground tabular">
+                <Link
+                  href={`/memos/${m.id}`}
+                  className="absolute inset-0"
+                  aria-label={`Open memo: ${m.subject}`}
+                />
                 {m.memo_number ?? "—"}
               </TableCell>
               <TableCell className="px-3">
-                <Link
-                  href={`/memos/${m.id}`}
-                  className="font-medium underline-offset-4 group-hover:underline"
-                >
+                <span className="font-medium underline-offset-4 group-hover:underline">
                   {m.subject}
-                </Link>
+                </span>
                 {m.current_participant && (
                   <p className="mt-0.5 text-xs text-muted-foreground">
                     on {m.current_participant}&apos;s desk
