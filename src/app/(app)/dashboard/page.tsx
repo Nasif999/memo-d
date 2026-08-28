@@ -111,9 +111,9 @@ export default async function DashboardPage() {
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
         <Stat label="On my desk" value={awaiting.length} emphasis />
-        <Stat label="In progress" value={counts.submitted} />
-        <Stat label="Changes requested" value={counts.changes} />
-        <Stat label="My approved" value={counts.approved} />
+        <Stat label="My memos in progress" value={counts.submitted} />
+        <Stat label="My memos sent back" value={counts.changes} />
+        <Stat label="My memos approved" value={counts.approved} />
         <Stat label="Urgent, org-wide" value={urgentCount} />
       </div>
 
