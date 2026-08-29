@@ -131,9 +131,19 @@ re-apply. There is no invite code or link — every path into an organization is
 either self-service into a brand-new empty tenant, or requires an
 administrator of that organization to act.
 
-## Demo Accounts (seeded)
+## Demo Accounts
 
-All demo accounts use password **`Passw0rd!`**.
+Primary demo organization, password **`12345678`**:
+
+| Email | Role |
+|---|---|
+| mhnasifkhan@gmail.com | Organization founder / Admin |
+| sajid@gmail.com | User |
+| sakib@gmail.com | User |
+| aditto@gmail.com | User |
+| yearid@gmail.com | User |
+
+Also seeded (via `scripts/seed.mjs`), password **`Passw0rd!`**:
 
 | Organization | Email | Role |
 |---|---|---|
