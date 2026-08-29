@@ -85,7 +85,7 @@ export default async function AdminReportsPage({
         description="How memos are moving through your organization."
       />
 
-      <form className="flex flex-wrap items-end gap-3 rounded-md border bg-white p-4">
+      <form className="flex flex-wrap items-end gap-3 rounded-md border bg-card p-4">
         <div className="space-y-1">
           <Label htmlFor="from">From</Label>
           <Input id="from" name="from" type="date" defaultValue={from} />

@@ -1,21 +1,11 @@
 import Link from "next/link";
 import { format } from "date-fns";
-import { revalidatePath } from "next/cache";
 import { PageHeader } from "@/components/page-header";
 import { requireProfile } from "@/lib/auth";
 import { listNotifications } from "@/lib/data";
+import { markAllRead } from "./actions";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-
-async function markAllRead() {
-  "use server";
-  const { requireProfile } = await import("@/lib/auth");
-  const { markAllNotificationsRead } = await import("@/lib/data");
-  const profile = await requireProfile();
-  await markAllNotificationsRead(profile.id);
-  revalidatePath("/notifications");
-  revalidatePath("/", "layout");
-}
 
 export default async function NotificationsPage() {
   const profile = await requireProfile();
@@ -43,13 +33,13 @@ export default async function NotificationsPage() {
             <li
               key={n.id}
               className={cn(
-                "rounded-md border bg-white p-3 text-sm",
-                !n.isRead && "border-blue-300 bg-blue-50"
+                "rounded-md border bg-card p-3 text-sm",
+                !n.isRead && "border-accent/40 bg-accent/10"
               )}
             >
               <div className="flex items-center justify-between">
                 <span>
-                  {!n.isRead && <span className="mr-2 text-blue-600">●</span>}
+                  {!n.isRead && <span className="mr-2 text-accent">●</span>}
                   {n.memoId ? (
                     <Link href={`/memos/${n.memoId}`} className="underline">
                       {n.message}

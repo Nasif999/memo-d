@@ -25,6 +25,7 @@ export type Profile = {
   email: string;
   designation: string | null;
   departmentId: string | null;
+  photoUrl: string | null;
   role: "org_admin" | "user";
   // "pending" = joined by request, awaiting an administrator's approval.
   // Pending profiles are never treated as members: they cannot establish a
@@ -95,6 +96,7 @@ export async function getProfile(uid: string): Promise<Profile | null> {
     email: d.email,
     designation: d.designation ?? null,
     departmentId: d.departmentId ?? null,
+    photoUrl: d.photoUrl ?? null,
     role: d.role,
     status: d.status,
   };
@@ -107,6 +109,11 @@ export type Org = {
   logoUrl: string | null;
   contactEmail: string | null;
   contactPhone: string | null;
+  // The org's creator, or whoever they've since handed the role to. The
+  // owner is the only member who can modify another admin's account — an
+  // ordinary admin can do anything to a regular user, but nothing to a peer
+  // admin. Ownership is transferable but always singular.
+  ownerId: string | null;
 };
 
 export async function getOrg(orgId: string): Promise<Org | null> {
@@ -120,7 +127,25 @@ export async function getOrg(orgId: string): Promise<Org | null> {
     logoUrl: o.logoUrl ?? null,
     contactEmail: o.contactEmail ?? null,
     contactPhone: o.contactPhone ?? null,
+    ownerId: o.ownerId ?? null,
   };
+}
+
+// Transfers the "Owner" role to another active admin of the same org. Only
+// callable by the current owner (enforced by the caller); the outgoing owner
+// keeps their org_admin role, they just lose the power to edit other admins.
+export async function transferOwnership(orgId: string, newOwnerId: string) {
+  const target = await getProfile(newOwnerId);
+  if (!target || target.orgId !== orgId || target.status !== "active") {
+    throw new Error("Target must be an active member of your organization.");
+  }
+  const batch = db().batch();
+  if (target.role !== "org_admin") {
+    batch.update(db().collection("profiles").doc(newOwnerId), { role: "org_admin" });
+  }
+  batch.update(db().collection("orgs").doc(orgId), { ownerId: newOwnerId });
+  await batch.commit();
+  await logAudit(orgId, newOwnerId, "ownership_transferred", "org", orgId, target.fullName);
 }
 
 // Public directory for the "request to join" flow. Deliberately returns only
@@ -164,12 +189,62 @@ async function listNamed(collection: string, orgId: string): Promise<NamedItem[]
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
-export async function listDepartments(orgId: string) {
-  return listNamed("departments", orgId);
+export type Department = NamedItem & { designationId: string | null };
+
+// Departments carry a designationId — the position responsible for that
+// department (e.g. Finance Department -> Finance Manager). Unlike the other
+// NamedItem collections, this field is a real reference into `designations`,
+// so it gets its own mapper instead of the generic listNamed().
+export async function listDepartments(orgId: string): Promise<Department[]> {
+  const docs = await docsByOrg("departments", orgId);
+  return docs
+    .map((d) => {
+      const x = d.data();
+      return {
+        id: d.id,
+        name: x.name as string,
+        description: (x.description ?? null) as string | null,
+        isActive: x.isActive !== false,
+        designationId: (x.designationId ?? null) as string | null,
+      };
+    })
+    .sort((a, b) => a.name.localeCompare(b.name));
 }
 
 export async function listCategories(orgId: string) {
   return listNamed("categories", orgId);
+}
+
+// ---------- designations ----------
+// Designations are org-scoped, like departments and categories: a title
+// anyone picks (at signup, on approval, or from the admin panel) becomes an
+// "approved" designation for that org and shows up in every designation
+// dropdown from then on — nobody has to hand-maintain the list.
+
+export async function listDesignations(orgId: string) {
+  return listNamed("designations", orgId);
+}
+
+export async function listActiveDesignationNames(orgId: string) {
+  const rows = await listDesignations(orgId);
+  return rows.filter((r) => r.isActive).map((r) => r.name);
+}
+
+export async function ensureDesignation(orgId: string, name: string) {
+  const trimmed = name.trim();
+  if (!trimmed) return;
+  const docs = await docsByOrg("designations", orgId);
+  const exists = docs.some(
+    (d) => (d.data().name as string).toLowerCase() === trimmed.toLowerCase()
+  );
+  if (exists) return;
+  await db().collection("designations").add({
+    orgId,
+    name: trimmed,
+    description: null,
+    isActive: true,
+    createdAt: FieldValue.serverTimestamp(),
+  });
 }
 
 export async function listTemplates(orgId: string) {
@@ -203,6 +278,7 @@ export async function listOrgProfiles(orgId: string): Promise<Profile[]> {
         email: p.email as string,
         designation: (p.designation ?? null) as string | null,
         departmentId: (p.departmentId ?? null) as string | null,
+        photoUrl: (p.photoUrl ?? null) as string | null,
         role: p.role as Profile["role"],
         status: p.status as Profile["status"],
       };
@@ -213,6 +289,116 @@ export async function listOrgProfiles(orgId: string): Promise<Profile[]> {
 export async function profilesMap(orgId: string) {
   const rows = await listOrgProfiles(orgId);
   return new Map(rows.map((p) => [p.id, p]));
+}
+
+// ---------- delegations ----------
+// A delegation lets `delegateId` act on `delegatorId`'s behalf on whatever
+// memo step is currently assigned to the delegator, for a date range. The
+// turn-check in submitMemoTx honors this; here is just the CRUD for it.
+
+export type Delegation = {
+  id: string;
+  orgId: string;
+  delegatorId: string;
+  delegateId: string;
+  startDate: string; // "YYYY-MM-DD"
+  endDate: string;
+  reason: string | null;
+  isActive: boolean;
+  createdAt: string;
+};
+
+function delegationFromDoc(d: FirebaseFirestore.QueryDocumentSnapshot): Delegation {
+  const v = d.data();
+  return {
+    id: d.id,
+    orgId: v.orgId,
+    delegatorId: v.delegatorId,
+    delegateId: v.delegateId,
+    startDate: v.startDate,
+    endDate: v.endDate,
+    reason: (v.reason ?? null) as string | null,
+    isActive: v.isActive,
+    createdAt: tsToIso(v.createdAt),
+  };
+}
+
+// Is `delegateId` currently an active stand-in for `delegatorId`? Mirrors the
+// turn-check in submitMemoTx / listInboxMemos.
+export async function isActiveDelegate(
+  orgId: string,
+  delegateId: string,
+  delegatorId: string
+) {
+  if (delegateId === delegatorId) return false;
+  const today = new Date().toISOString().slice(0, 10);
+  const snap = await db()
+    .collection("delegations")
+    .where("delegateId", "==", delegateId)
+    .where("delegatorId", "==", delegatorId)
+    .get();
+  return snap.docs.some((d) => {
+    const v = d.data();
+    return (
+      v.orgId === orgId &&
+      v.isActive &&
+      v.startDate <= today &&
+      v.endDate >= today
+    );
+  });
+}
+
+// Delegations this user set up (as delegator) or was granted (as delegate).
+export async function listDelegationsFor(orgId: string, userId: string) {
+  const docs = await docsByOrg("delegations", orgId);
+  const mine = docs.filter(
+    (d) => d.data().delegatorId === userId || d.data().delegateId === userId
+  );
+  return mine
+    .map(delegationFromDoc)
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
+export async function createDelegation(
+  orgId: string,
+  delegatorId: string,
+  delegateId: string,
+  startDate: string,
+  endDate: string,
+  reason: string | null
+) {
+  if (delegateId === delegatorId) throw new Error("Cannot delegate to yourself.");
+  if (endDate < startDate) throw new Error("End date must be on or after the start date.");
+  const delegate = await getProfile(delegateId);
+  if (!delegate || delegate.orgId !== orgId || delegate.status !== "active") {
+    throw new Error("Delegate must be an active member of your organization.");
+  }
+  const delegator = await getProfile(delegatorId);
+  const ref = await db().collection("delegations").add({
+    orgId, delegatorId, delegateId, startDate, endDate,
+    reason: reason || null,
+    isActive: true,
+    createdAt: FieldValue.serverTimestamp(),
+  });
+  await logAudit(orgId, delegatorId, "delegation_created", "delegation", ref.id,
+    `Delegated to ${delegate.fullName} (${startDate} to ${endDate})`);
+  await notifyUser(orgId, delegateId, "delegation_created", null,
+    `You were granted authority to act on ${delegator?.fullName ?? "a colleague"}'s behalf`,
+    "/profile");
+}
+
+// Only the delegator (or an org admin) may revoke — a delegate cannot grant
+// or strip their own authority.
+export async function revokeDelegation(orgId: string, actor: Profile, delegationId: string) {
+  const ref = db().collection("delegations").doc(delegationId);
+  const snap = await ref.get();
+  if (!snap.exists || snap.data()?.orgId !== orgId) throw new Error("Delegation not found.");
+  const d = snap.data()!;
+  if (d.delegatorId !== actor.id && actor.role !== "org_admin") {
+    throw new Error("Only the delegator or an administrator can revoke this.");
+  }
+  await ref.update({ isActive: false });
+  await logAudit(orgId, actor.id, "delegation_revoked", "delegation", delegationId, null);
 }
 
 // ---------- memos ----------
@@ -284,18 +470,43 @@ export async function listMemosByAuthor(authorId: string, orgId: string) {
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 
+// A memo is "on your desk" if it's assigned to you directly, or to someone
+// who has actively delegated their turn to you (see the turn-check in
+// submitMemoTx — this mirrors it for the inbox listing).
 export async function listInboxMemos(uid: string, orgId: string) {
-  const snap = await db()
-    .collection("memos")
-    .where("currentAssigneeId", "==", uid)
+  const today = new Date().toISOString().slice(0, 10);
+  const delSnap = await db()
+    .collection("delegations")
+    .where("delegateId", "==", uid)
     .get();
-  return snap.docs
-    .map(memoFromSnap)
+  const delegatedFor = delSnap.docs
+    .map((d) => d.data())
     .filter(
-      (m) =>
-        m.orgId === orgId &&
-        ["Pending Approval", "Pending Review", "Submitted"].includes(m.status)
-    );
+      (d) =>
+        d.orgId === orgId &&
+        d.isActive &&
+        d.startDate <= today &&
+        d.endDate >= today
+    )
+    .map((d) => d.delegatorId as string);
+
+  const assigneeIds = Array.from(new Set([uid, ...delegatedFor]));
+  const results = await Promise.all(
+    assigneeIds.map((id) =>
+      db().collection("memos").where("currentAssigneeId", "==", id).get()
+    )
+  );
+  const byId = new Map<string, MemoDoc>();
+  for (const snap of results) {
+    for (const doc of snap.docs) {
+      byId.set(doc.id, memoFromSnap(doc));
+    }
+  }
+  return Array.from(byId.values()).filter(
+    (m) =>
+      m.orgId === orgId &&
+      ["Pending Approval", "Pending Review", "Submitted"].includes(m.status)
+  );
 }
 
 export async function listOrgMemos(orgId: string, viewer: Profile) {

@@ -23,7 +23,10 @@ export async function getSessionProfile(): Promise<Profile | null> {
 // org checks in the data layer are the security boundary.
 export async function requireProfile(): Promise<Profile> {
   const profile = await getSessionProfile();
-  if (!profile) redirect("/login");
+  // A stale/invalid session cookie can't be cleared here (Server Components
+  // can't set cookies) — route through /api/auth/session, which clears it
+  // before redirecting, so middleware doesn't bounce back to /dashboard.
+  if (!profile) redirect("/api/auth/session");
   return profile;
 }
 

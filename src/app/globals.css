@@ -9,26 +9,26 @@
 */
 @layer base {
   :root {
-    --background: 220 20% 97%;      /* paper — the page ground */
-    --foreground: 222 38% 10%;      /* ink */
-    --card: 0 0% 100%;
-    --card-foreground: 222 38% 10%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 222 38% 10%;
-    --primary: 222 38% 12%;         /* ink-black actions */
-    --primary-foreground: 0 0% 100%;
-    --secondary: 220 18% 94%;
-    --secondary-foreground: 222 30% 16%;
-    --muted: 220 18% 95%;
-    --muted-foreground: 218 12% 42%;
-    --accent: 220 18% 94%;
-    --accent-foreground: 222 30% 16%;
-    --destructive: 4 71% 41%;       /* stamp red */
-    --destructive-foreground: 0 0% 100%;
-    --border: 218 20% 89%;
-    --input: 218 20% 86%;
-    --ring: 222 38% 20%;
-    --radius: 0.375rem;
+    --background: 42 21% 88%;       /* warm bone — the page ground */
+    --foreground: 40 6% 10%;        /* ink */
+    --card: 42 20% 92%;
+    --card-foreground: 40 6% 10%;
+    --popover: 42 20% 92%;
+    --popover-foreground: 40 6% 10%;
+    --primary: 40 6% 10%;           /* ink actions */
+    --primary-foreground: 42 21% 88%;
+    --secondary: 42 20% 83%;        /* secondary ground */
+    --secondary-foreground: 40 6% 10%;
+    --muted: 42 20% 83%;
+    --muted-foreground: 42 6% 41%;
+    --accent: 13 73% 35%;           /* oxide — emphasis only, never fill */
+    --accent-foreground: 42 21% 88%;
+    --destructive: 13 73% 35%;      /* stamp red / oxide */
+    --destructive-foreground: 42 21% 88%;
+    --border: 40 6% 10% / 0.16;     /* hairline */
+    --input: 40 6% 10% / 0.16;
+    --ring: 13 73% 35%;
+    --radius: 0rem;                 /* square corners everywhere */
 
     /* Workflow state. Each pairs a saturated ink with a wash for its ground. */
     --state-draft: 218 15% 34%;
@@ -51,9 +51,29 @@
   body {
     @apply bg-background text-foreground;
   }
+  /* Headlines carry the serif voice; everything else — labels, buttons,
+     table cells, body copy — stays mono, set on <body>. */
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-sans);
+    letter-spacing: -0.015em;
+  }
   /* Identifiers are records: numbers, codes and references never reflow. */
   .tabular {
     font-variant-numeric: tabular-nums;
+  }
+  /* Tailwind Typography ships its own gray scale by default — repoint it at
+     the site's ink/paper tokens so memo body copy matches everything else. */
+  .prose {
+    --tw-prose-body: hsl(var(--foreground));
+    --tw-prose-headings: hsl(var(--foreground));
+    --tw-prose-bold: hsl(var(--foreground));
+    --tw-prose-links: hsl(var(--foreground));
+    --tw-prose-bullets: hsl(var(--muted-foreground));
+    --tw-prose-hr: hsl(var(--border));
+    --tw-prose-quotes: hsl(var(--foreground));
+    --tw-prose-quote-borders: hsl(var(--border));
+    --tw-prose-captions: hsl(var(--muted-foreground));
+    --tw-prose-code: hsl(var(--foreground));
   }
 }
 

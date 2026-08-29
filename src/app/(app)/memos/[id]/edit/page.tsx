@@ -6,6 +6,8 @@ import {
   listCategories,
   listOrgProfiles,
   listTemplates,
+  listAttachments,
+  profilesMap,
 } from "@/lib/data";
 import { MemoForm } from "@/components/memo-form";
 
@@ -22,11 +24,13 @@ export default async function EditMemoPage({
   if (!["Draft", "Changes Requested"].includes(memo.status))
     redirect(`/memos/${params.id}`);
 
-  const [departments, categories, users, templates] = await Promise.all([
+  const [departments, categories, users, templates, attachments, people] = await Promise.all([
     listDepartments(profile.orgId),
     listCategories(profile.orgId),
     listOrgProfiles(profile.orgId),
     listTemplates(profile.orgId),
+    listAttachments(memo.id),
+    profilesMap(profile.orgId),
   ]);
 
   return (
@@ -62,6 +66,13 @@ export default async function EditMemoPage({
           category_id: memo.categoryId,
           priority: memo.priority,
           status: memo.status,
+          attachments: attachments.map((a) => ({
+            id: a.id,
+            filename: a.filename,
+            size_bytes: a.sizeBytes,
+            created_at: a.createdAt,
+            uploader: people.get(a.uploadedBy)?.fullName ?? "Unknown",
+          })),
         }}
       />
     </div>

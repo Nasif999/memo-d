@@ -80,7 +80,7 @@ export default async function SearchPage({
         title="Search"
         description="Look across every memo your organization has filed."
       />
-      <form className="grid gap-3 rounded-md border bg-white p-4 md:grid-cols-4">
+      <form className="grid gap-3 rounded-md border bg-card p-4 md:grid-cols-4">
         <div className="space-y-1 md:col-span-2">
           <Label htmlFor="q">Search text</Label>
           <Input id="q" name="q" defaultValue={searchParams.q ?? ""}
@@ -89,7 +89,7 @@ export default async function SearchPage({
         <div className="space-y-1">
           <Label htmlFor="status">Status</Label>
           <select id="status" name="status" defaultValue={status}
-            className="h-9 w-full rounded-md border bg-white px-2 text-sm">
+            className="h-9 w-full rounded-md border bg-card px-2 text-sm">
             <option value="">Any</option>
             {MEMO_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
           </select>
@@ -97,7 +97,7 @@ export default async function SearchPage({
         <div className="space-y-1">
           <Label htmlFor="priority">Priority</Label>
           <select id="priority" name="priority" defaultValue={priority}
-            className="h-9 w-full rounded-md border bg-white px-2 text-sm">
+            className="h-9 w-full rounded-md border bg-card px-2 text-sm">
             <option value="">Any</option>
             {PRIORITIES.map((p) => <option key={p} value={p}>{p}</option>)}
           </select>
@@ -105,7 +105,7 @@ export default async function SearchPage({
         <div className="space-y-1">
           <Label htmlFor="department">Department</Label>
           <select id="department" name="department" defaultValue={department}
-            className="h-9 w-full rounded-md border bg-white px-2 text-sm">
+            className="h-9 w-full rounded-md border bg-card px-2 text-sm">
             <option value="">Any</option>
             {departments.map((d) => (
               <option key={d.id} value={d.id}>{d.name}</option>
@@ -115,7 +115,7 @@ export default async function SearchPage({
         <div className="space-y-1">
           <Label htmlFor="category">Category</Label>
           <select id="category" name="category" defaultValue={category}
-            className="h-9 w-full rounded-md border bg-white px-2 text-sm">
+            className="h-9 w-full rounded-md border bg-card px-2 text-sm">
             <option value="">Any</option>
             {categories.map((c) => (
               <option key={c.id} value={c.id}>{c.name}</option>

@@ -14,7 +14,7 @@ import { OrgForm } from "@/components/admin/org-form";
 
 function Stat({ label, value }: { label: string; value: number }) {
   return (
-    <div className="rounded-lg border border-border bg-card px-4 py-3.5">
+    <div className="border-t-2 border-border px-0.5 py-3.5">
       <p className="font-mono text-2xl font-semibold leading-none tabular">
         {value}
       </p>
@@ -44,6 +44,7 @@ export default async function AdminPage() {
     { href: "/admin/users", label: "Users", desc: "Add, activate, and assign roles" },
     { href: "/admin/departments", label: "Departments", desc: "Manage org departments" },
     { href: "/admin/categories", label: "Memo Categories", desc: "Manage memo categories" },
+    { href: "/admin/designations", label: "Designations", desc: "Approved job titles" },
     { href: "/admin/workflow-templates", label: "Workflow Templates", desc: "Reusable approval sequences" },
     { href: "/admin/reports", label: "Reports", desc: "Memo statistics" },
     { href: "/admin/audit-log", label: "Audit Log", desc: "System event history" },
@@ -70,7 +71,7 @@ export default async function AdminPage() {
       <div className="grid gap-4 md:grid-cols-3">
         {sections.map((s) => (
           <Link key={s.href} href={s.href}>
-            <Card className="transition hover:shadow-md">
+            <Card className="transition-colors hover:border-accent">
               <CardHeader>
                 <CardTitle className="text-base">{s.label}</CardTitle>
               </CardHeader>
@@ -92,6 +93,7 @@ export default async function AdminPage() {
                 identifier: org?.identifier ?? "",
                 contact_email: org?.contactEmail ?? "",
                 contact_phone: org?.contactPhone ?? "",
+                logo_url: org?.logoUrl ?? "",
               }}
             />
           </CardContent>

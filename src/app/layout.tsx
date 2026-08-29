@@ -1,18 +1,19 @@
 import type { Metadata } from "next";
-import { IBM_Plex_Sans, IBM_Plex_Mono } from "next/font/google";
+import { Instrument_Serif, Azeret_Mono } from "next/font/google";
 import "./globals.css";
 import { cn } from "@/lib/utils";
 
-// Plex was drawn for an office-machine company, which is exactly what this is:
-// institutional without costume. The mono carries every identifier — memo
-// numbers, invite codes, timestamps — so records read as records.
-const sans = IBM_Plex_Sans({
+// Editorial voice throughout: serif for headlines, mono for everything that
+// reads as a record — labels, identifiers, body copy. Matches the landing
+// page's design language site-wide.
+const sans = Instrument_Serif({
   subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
+  weight: ["400"],
+  style: ["normal", "italic"],
   variable: "--font-sans",
 });
 
-const mono = IBM_Plex_Mono({
+const mono = Azeret_Mono({
   subsets: ["latin"],
   weight: ["400", "500", "600"],
   variable: "--font-mono",
@@ -31,7 +32,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className={cn(sans.variable, mono.variable)}>
-      <body className="font-sans antialiased">{children}</body>
+      <body className="font-mono antialiased">{children}</body>
     </html>
   );
 }

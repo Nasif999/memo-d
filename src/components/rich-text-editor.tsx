@@ -18,16 +18,16 @@ export function RichTextEditor({
     editorProps: {
       attributes: {
         class:
-          "prose prose-sm max-w-none min-h-[200px] rounded-md border bg-white p-3 focus:outline-none",
+          "prose prose-sm max-w-none min-h-[200px] rounded-md border bg-card p-3 focus:outline-none",
       },
     },
     onUpdate: ({ editor }) => onChange(editor.getHTML()),
   });
 
-  if (!editor) return <div className="min-h-[240px] rounded-md border bg-white" />;
+  if (!editor) return <div className="min-h-[240px] rounded-md border bg-card" />;
 
   const btn = (active: boolean) =>
-    active ? "bg-slate-200" : "";
+    active ? "bg-accent text-accent-foreground" : "";
 
   return (
     <div className="space-y-2">

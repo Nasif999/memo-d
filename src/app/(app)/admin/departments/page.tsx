@@ -1,28 +1,33 @@
 import { requireAdmin } from "@/lib/auth";
-import { listDepartments } from "@/lib/data";
-import { SimpleCrud } from "@/components/admin/simple-crud";
-import { upsertDepartment, setDepartmentActive } from "../actions";
+import { listDepartments, listDesignations } from "@/lib/data";
+import { DepartmentsAdmin } from "@/components/admin/departments-admin";
 
 export default async function AdminDepartmentsPage() {
   const admin = await requireAdmin();
-  const departments = await listDepartments(admin.orgId);
+  const [departments, designations] = await Promise.all([
+    listDepartments(admin.orgId),
+    listDesignations(admin.orgId),
+  ]);
 
   return (
     <div className="space-y-4">
       <h1 className="text-2xl font-bold">Departments</h1>
       <p className="text-sm text-muted-foreground">
-        Deactivating a department keeps all historical memo data.
+        Every department is linked to the designation responsible for it — e.g.
+        Finance Department → Finance Manager. Deactivating a department keeps
+        all historical memo data.
       </p>
-      <SimpleCrud
-        title="Department"
-        items={departments.map((d) => ({
+      <DepartmentsAdmin
+        departments={departments.map((d) => ({
           id: d.id,
           name: d.name,
           description: d.description ?? null,
           is_active: d.isActive !== false,
+          designation_id: d.designationId,
         }))}
-        onSave={upsertDepartment}
-        onToggle={setDepartmentActive}
+        designations={designations
+          .filter((d) => d.isActive !== false)
+          .map((d) => ({ id: d.id, name: d.name }))}
       />
     </div>
   );

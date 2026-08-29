@@ -21,9 +21,11 @@ export default async function AppLayout({
           full_name: profile.fullName,
           role: profile.role,
           designation: profile.designation,
+          photo_url: profile.photoUrl,
         }}
         orgName={org?.name ?? ""}
         orgIdentifier={org?.identifier ?? ""}
+        orgLogoUrl={org?.logoUrl ?? null}
         unreadCount={unread}
       />
       <main className="mx-auto max-w-7xl px-4 py-6 md:px-6 md:py-8">

@@ -1,13 +1,17 @@
 import { PageHeader } from "@/components/page-header";
 import { requireAdmin } from "@/lib/auth";
-import { listOrgProfiles, listDepartments } from "@/lib/data";
+import {
+  listOrgProfiles, listDepartments, getOrg, listActiveDesignationNames,
+} from "@/lib/data";
 import { UsersAdmin } from "@/components/admin/users-admin";
 
 export default async function AdminUsersPage() {
   const admin = await requireAdmin();
-  const [users, departments] = await Promise.all([
+  const [users, departments, org, designationOptions] = await Promise.all([
     listOrgProfiles(admin.orgId),
     listDepartments(admin.orgId),
+    getOrg(admin.orgId),
+    listActiveDesignationNames(admin.orgId),
   ]);
 
   return (
@@ -29,6 +33,8 @@ export default async function AdminUsersPage() {
         }))}
         departments={departments.filter((d) => d.isActive !== false)}
         selfId={admin.id}
+        ownerId={org?.ownerId ?? null}
+        designationOptions={designationOptions}
       />
     </div>
   );

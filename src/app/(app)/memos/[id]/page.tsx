@@ -12,6 +12,7 @@ import {
   profilesMap,
   listDepartments,
   listCategories,
+  isActiveDelegate,
 } from "@/lib/data";
 import {
   StatusBadge,
@@ -65,7 +66,10 @@ export default async function MemoDetailsPage({
     : null;
 
   const currentStep = steps.find((s) => s.status === "Active");
-  const isMyTurn = currentStep?.assignedUserId === profile.id;
+  const isMyTurn =
+    !!currentStep &&
+    (currentStep.assignedUserId === profile.id ||
+      (await isActiveDelegate(profile.orgId, profile.id, currentStep.assignedUserId)));
   const isAuthor = memo.authorId === profile.id;
   const canEdit =
     isAuthor && ["Draft", "Changes Requested"].includes(memo.status);

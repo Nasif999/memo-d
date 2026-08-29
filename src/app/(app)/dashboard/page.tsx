@@ -24,17 +24,11 @@ function Stat({
   emphasis?: boolean;
 }) {
   return (
-    <div
-      className={
-        emphasis && Number(value) > 0
-          ? "rounded-lg border border-state-pending/35 bg-state-pending-wash px-4 py-3.5"
-          : "rounded-lg border border-border bg-card px-4 py-3.5"
-      }
-    >
+    <div className="border-t-2 border-border px-0.5 py-3.5">
       <p
         className={
           emphasis && Number(value) > 0
-            ? "font-mono text-2xl font-semibold leading-none text-state-pending tabular"
+            ? "font-mono text-2xl font-semibold leading-none text-accent tabular"
             : "font-mono text-2xl font-semibold leading-none tabular"
         }
       >

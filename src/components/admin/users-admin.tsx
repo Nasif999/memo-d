@@ -4,9 +4,13 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
-  createUser, setUserStatus, setUserRole, setUserDepartment,
-  approveJoinRequest, rejectJoinRequest,
+  createUser, setUserStatus, setUserRole, setUserDepartment, setUserDesignation,
+  approveJoinRequest, rejectJoinRequest, transferOwnership, removeUser,
+  upsertDepartment,
 } from "@/app/(app)/admin/actions";
+import { DesignationCombobox } from "@/components/designation-combobox";
+import { DepartmentCombobox } from "@/components/department-combobox";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -33,31 +37,63 @@ export function UsersAdmin({
   users,
   departments,
   selfId,
+  ownerId,
+  designationOptions,
 }: {
   users: User[];
   departments: { id: string; name: string }[];
   selfId: string;
+  ownerId: string | null;
+  designationOptions: string[];
 }) {
   const router = useRouter();
+  const [deptOptions, setDeptOptions] = useState(departments);
+
+  async function createDepartment(name: string) {
+    const res = await upsertDepartment({ name, description: "" });
+    if (res.error || !res.id) {
+      toast.error(res.error ?? "Could not create department.");
+      return null;
+    }
+    const created = { id: res.id, name };
+    setDeptOptions((prev) => [...prev, created]);
+    toast.success(`Department "${name}" created`);
+    router.refresh();
+    return created;
+  }
+
+  const isOwnerViewer = selfId !== null && selfId === ownerId;
   // Pending profiles are join requests, not members — they are listed and
   // acted on separately so an admin never confuses the two.
   const pending = users.filter((u) => u.status === "pending");
   const members = users.filter((u) => u.status !== "pending");
   const [decisions, setDecisions] = useState<
-    Record<string, { role: "user" | "org_admin"; department_id: string }>
+    Record<string, { role: "user" | "org_admin"; department_id: string; designation: string }>
   >({});
 
-  function decisionFor(id: string) {
-    return decisions[id] ?? { role: "user" as const, department_id: "" };
+  function decisionFor(u: User) {
+    return (
+      decisions[u.id] ?? {
+        role: "user" as const,
+        department_id: "",
+        designation: u.designation ?? "",
+      }
+    );
+  }
+
+  // Only the owner may hand another admin's account — a non-owner admin can
+  // still see it, just not touch it.
+  function mayModify(u: User) {
+    return u.role !== "org_admin" || u.id === selfId || isOwnerViewer;
   }
 
   async function approve(u: User) {
-    const d = decisionFor(u.id);
+    const d = decisionFor(u);
     const res = await approveJoinRequest({
       userId: u.id,
       role: d.role,
       department_id: d.department_id || null,
-      designation: u.designation ?? "",
+      designation: d.designation,
     });
     if (res.error) return toast.error(res.error);
     toast.success(`${u.full_name} approved`);
@@ -113,6 +149,36 @@ export function UsersAdmin({
     router.refresh();
   }
 
+  async function changeDesignation(u: User, designation: string) {
+    const res = await setUserDesignation(u.id, designation);
+    if (res.error) return toast.error(res.error);
+    router.refresh();
+  }
+
+  async function remove(u: User) {
+    if (!window.confirm(`Remove ${u.full_name} from this organization? This cannot be undone.`)) {
+      return;
+    }
+    const res = await removeUser(u.id);
+    if (res.error) return toast.error(res.error);
+    toast.success(`${u.full_name} removed`);
+    router.refresh();
+  }
+
+  const [transferTo, setTransferTo] = useState("");
+  const [transferring, setTransferring] = useState(false);
+
+  async function doTransfer() {
+    if (!transferTo) return;
+    setTransferring(true);
+    const res = await transferOwnership(transferTo);
+    setTransferring(false);
+    if (res.error) return toast.error(res.error);
+    toast.success("Ownership transferred");
+    setTransferTo("");
+    router.refresh();
+  }
+
   return (
     <div className="space-y-4">
       <Button onClick={() => setOpen(true)}>+ Add user</Button>
@@ -132,31 +198,32 @@ export function UsersAdmin({
             </div>
             <div className="space-y-1">
               <Label>Initial password (8+ chars)</Label>
-              <Input type="password" value={form.password}
+              <PasswordInput value={form.password}
                 onChange={(e) => setForm({ ...form, password: e.target.value })} />
             </div>
             <div className="space-y-1">
               <Label>Designation</Label>
-              <Input value={form.designation}
-                onChange={(e) => setForm({ ...form, designation: e.target.value })} />
+              <DesignationCombobox
+                value={form.designation}
+                onChange={(v) => setForm({ ...form, designation: v })}
+                options={designationOptions}
+              />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
                 <Label>Department</Label>
-                <select
-                  className="h-9 w-full rounded-md border bg-white px-2 text-sm"
+                <DepartmentCombobox
+                  className="h-9"
                   value={form.department_id}
-                  onChange={(e) => setForm({ ...form, department_id: e.target.value })}>
-                  <option value="">None</option>
-                  {departments.map((d) => (
-                    <option key={d.id} value={d.id}>{d.name}</option>
-                  ))}
-                </select>
+                  onChange={(v) => setForm({ ...form, department_id: v })}
+                  options={deptOptions}
+                  onCreate={createDepartment}
+                />
               </div>
               <div className="space-y-1">
                 <Label>Role</Label>
                 <select
-                  className="h-9 w-full rounded-md border bg-white px-2 text-sm"
+                  className="h-9 w-full rounded-md border bg-card px-2 text-sm"
                   value={form.role}
                   onChange={(e) => setForm({ ...form, role: e.target.value as "user" | "org_admin" })}>
                   <option value="user">User</option>
@@ -198,32 +265,44 @@ export function UsersAdmin({
                     <TableRow key={u.id}>
                       <TableCell className="font-medium">{u.full_name}</TableCell>
                       <TableCell>{u.email}</TableCell>
-                      <TableCell>{u.designation ?? "—"}</TableCell>
                       <TableCell>
-                        <select
-                          className="h-8 rounded-md border bg-white px-1 text-sm"
-                          value={decisionFor(u.id).department_id}
-                          onChange={(e) =>
+                        <DesignationCombobox
+                          id={`pending-designation-${u.id}`}
+                          className="h-8 rounded-md border bg-card px-1 text-sm"
+                          value={decisionFor(u).designation}
+                          onChange={(v) =>
                             setDecisions((prev) => ({
                               ...prev,
-                              [u.id]: { ...decisionFor(u.id), department_id: e.target.value },
+                              [u.id]: { ...decisionFor(u), designation: v },
                             }))
-                          }>
-                          <option value="">None</option>
-                          {departments.map((d) => (
-                            <option key={d.id} value={d.id}>{d.name}</option>
-                          ))}
-                        </select>
+                          }
+                          options={designationOptions}
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <DepartmentCombobox
+                          id={`pending-department-${u.id}`}
+                          className="h-8 rounded-md border bg-card px-1 text-sm"
+                          value={decisionFor(u).department_id}
+                          onChange={(v) =>
+                            setDecisions((prev) => ({
+                              ...prev,
+                              [u.id]: { ...decisionFor(u), department_id: v },
+                            }))
+                          }
+                          options={deptOptions}
+                          onCreate={createDepartment}
+                        />
                       </TableCell>
                       <TableCell>
                         <select
-                          className="h-8 rounded-md border bg-white px-1 text-sm"
-                          value={decisionFor(u.id).role}
+                          className="h-8 rounded-md border bg-card px-1 text-sm"
+                          value={decisionFor(u).role}
                           onChange={(e) =>
                             setDecisions((prev) => ({
                               ...prev,
                               [u.id]: {
-                                ...decisionFor(u.id),
+                                ...decisionFor(u),
                                 role: e.target.value as "user" | "org_admin",
                               },
                             }))
@@ -264,21 +343,37 @@ export function UsersAdmin({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {members.map((u) => (
+                {members.map((u) => {
+                  const editable = mayModify(u);
+                  return (
                   <TableRow key={u.id}>
-                    <TableCell className="font-medium">{u.full_name}</TableCell>
+                    <TableCell className="font-medium">
+                      {u.full_name}
+                      {u.id === ownerId && (
+                        <Badge className="ml-1.5" variant="default">Owner</Badge>
+                      )}
+                    </TableCell>
                     <TableCell>{u.email}</TableCell>
-                    <TableCell>{u.designation ?? "—"}</TableCell>
                     <TableCell>
-                      <select
-                        className="h-8 rounded-md border bg-white px-1 text-sm"
+                      <DesignationCombobox
+                        id={`member-designation-${u.id}`}
+                        className="h-8 py-1"
+                        disabled={!editable}
+                        value={u.designation ?? ""}
+                        onChange={(v) => changeDesignation(u, v)}
+                        options={designationOptions}
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <DepartmentCombobox
+                        id={`member-department-${u.id}`}
+                        className="h-8 py-1"
+                        disabled={!editable}
                         value={u.department_id ?? ""}
-                        onChange={(e) => changeDept(u, e.target.value)}>
-                        <option value="">None</option>
-                        {departments.map((d) => (
-                          <option key={d.id} value={d.id}>{d.name}</option>
-                        ))}
-                      </select>
+                        onChange={(v) => changeDept(u, v)}
+                        options={deptOptions}
+                        onCreate={createDepartment}
+                      />
                     </TableCell>
                     <TableCell>
                       <Badge variant={u.role === "org_admin" ? "default" : "secondary"}>
@@ -291,7 +386,7 @@ export function UsersAdmin({
                       </Badge>
                     </TableCell>
                     <TableCell className="space-x-1 whitespace-nowrap">
-                      {u.id !== selfId && (
+                      {u.id !== selfId && editable && (
                         <>
                           <Button size="sm" variant="outline" onClick={() => toggleStatus(u)}>
                             {u.status === "active" ? "Deactivate" : "Activate"}
@@ -299,16 +394,60 @@ export function UsersAdmin({
                           <Button size="sm" variant="ghost" onClick={() => toggleRole(u)}>
                             {u.role === "org_admin" ? "Make user" : "Make admin"}
                           </Button>
+                          <Button size="sm" variant="destructive" onClick={() => remove(u)}>
+                            Remove
+                          </Button>
                         </>
+                      )}
+                      {u.id !== selfId && !editable && (
+                        <span className="text-xs text-muted-foreground">
+                          Only the owner can change admins
+                        </span>
                       )}
                     </TableCell>
                   </TableRow>
-                ))}
+                  );
+                })}
               </TableBody>
             </Table>
           </div>
         </CardContent>
       </Card>
+
+      {isOwnerViewer && (
+        <Card>
+          <CardHeader><CardTitle>Transfer ownership</CardTitle></CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-xs text-muted-foreground">
+              You are the Owner — the only member who can edit another admin&apos;s
+              account. Handing this to someone else moves that power to them;
+              you remain an admin, just no longer the Owner.
+            </p>
+            <div className="flex items-center gap-2">
+              <select
+                className="h-9 flex-1 rounded-md border bg-card px-2 text-sm"
+                value={transferTo}
+                onChange={(e) => setTransferTo(e.target.value)}>
+                <option value="">Select a member…</option>
+                {members
+                  .filter((u) => u.id !== selfId && u.status === "active")
+                  .map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.full_name}{u.role === "org_admin" ? " (admin)" : ""}
+                    </option>
+                  ))}
+              </select>
+              <Button
+                variant="outline"
+                disabled={!transferTo || transferring}
+                onClick={doTransfer}
+              >
+                {transferring ? "Transferring…" : "Transfer"}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { listJoinableOrgs } from "@/lib/data";
 import { SignupForm } from "@/components/signup-form";
 
@@ -9,7 +10,9 @@ export default async function SignupPage() {
   const orgs = await listJoinableOrgs();
   return (
     <div className="flex min-h-screen items-center justify-center bg-background p-4">
-      <SignupForm orgs={orgs} />
+      <Suspense>
+        <SignupForm orgs={orgs} />
+      </Suspense>
     </div>
   );
 }

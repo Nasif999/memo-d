@@ -52,6 +52,16 @@ export async function POST(request: Request) {
   return NextResponse.json({ ok: true });
 }
 
+// Invalid/stale session cookies (e.g. the user or org behind it was deleted)
+// can't be cleared from a Server Component render, only from a route handler
+// or action — without this, requireProfile()'s redirect("/login") leaves the
+// bad cookie in place, and middleware bounces it straight back to /dashboard,
+// producing an infinite redirect loop.
+export async function GET(request: Request) {
+  cookies().delete(SESSION_COOKIE);
+  return NextResponse.redirect(new URL("/login", request.url));
+}
+
 export async function DELETE() {
   const store = cookies();
   const cookie = store.get(SESSION_COOKIE)?.value;

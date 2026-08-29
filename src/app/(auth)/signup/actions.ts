@@ -3,7 +3,12 @@
 import { z } from "zod";
 import { FieldValue } from "firebase-admin/firestore";
 import { adminAuth, db } from "@/lib/firebase/admin";
-import { logAudit, listJoinableOrgs, listActiveAdmins, notifyUser } from "@/lib/data";
+import {
+  logAudit, listJoinableOrgs, listActiveAdmins, notifyUser,
+  listActiveDesignationNames, ensureDesignation,
+} from "@/lib/data";
+import { DESIGNATION_SUGGESTIONS } from "@/lib/designations";
+import { validateImageDataUrl } from "@/lib/image";
 
 // Public, unauthenticated endpoint: registers a new tenant and its first
 // administrator. It can only ever create a brand-new organization — it never
@@ -22,14 +27,14 @@ const schema = z.object({
   email: z.string().trim().email(),
   password: z.string().min(8).max(72),
   designation: z.string().trim().max(120),
+  photoDataUrl: z.string().optional(),
+  orgLogoDataUrl: z.string().optional(),
+  departments: z.array(z.string().trim().min(1).max(120)).max(50),
+  workflowName: z.string().trim().min(1).max(120),
+  workflowSteps: z.array(z.string().trim().min(1).max(120)).min(1, "Define at least one workflow step."),
 });
 
 export type SignupInput = z.infer<typeof schema>;
-
-const DEFAULT_DEPARTMENTS = [
-  { name: "Administration", description: "Administrative office" },
-  { name: "Finance", description: "Finance and accounts" },
-];
 
 const DEFAULT_CATEGORIES = [
   "Administrative", "Financial", "Procurement", "HR", "Academic", "Technical", "General",
@@ -40,8 +45,10 @@ export async function registerOrganization(input: SignupInput) {
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Invalid registration details." };
   }
-  const { orgName, fullName, email, password, designation } = parsed.data;
+  const { orgName, fullName, email, password, designation, departments, workflowName, workflowSteps } = parsed.data;
   const identifier = parsed.data.identifier.toUpperCase();
+  const photoUrl = validateImageDataUrl(parsed.data.photoDataUrl);
+  const orgLogoUrl = validateImageDataUrl(parsed.data.orgLogoDataUrl);
 
   // Organization identifiers must be unique — they prefix every memo number.
   const clash = await db()
@@ -74,22 +81,23 @@ export async function registerOrganization(input: SignupInput) {
     const orgRef = await db().collection("orgs").add({
       name: orgName,
       identifier,
-      logoUrl: null,
+      logoUrl: orgLogoUrl,
       contactEmail: email,
       contactPhone: null,
       isActive: true,
+      ownerId: uid,
       createdAt: FieldValue.serverTimestamp(),
     });
 
     const batch = db().batch();
     let firstDeptRef: FirebaseFirestore.DocumentReference | null = null;
-    for (const dept of DEFAULT_DEPARTMENTS) {
+    for (const name of departments) {
       const ref = db().collection("departments").doc();
       firstDeptRef ??= ref;
       batch.set(ref, {
         orgId: orgRef.id,
-        name: dept.name,
-        description: dept.description,
+        name,
+        description: null,
         isActive: true,
         createdAt: FieldValue.serverTimestamp(),
       });
@@ -103,17 +111,42 @@ export async function registerOrganization(input: SignupInput) {
         createdAt: FieldValue.serverTimestamp(),
       });
     }
+    const finalDesignation = designation || "Administrator";
+    for (const name of DESIGNATION_SUGGESTIONS) {
+      batch.set(db().collection("designations").doc(), {
+        orgId: orgRef.id,
+        name,
+        description: null,
+        isActive: true,
+        createdAt: FieldValue.serverTimestamp(),
+      });
+    }
     batch.set(db().collection("profiles").doc(uid), {
       orgId: orgRef.id,
       fullName,
       email,
-      designation: designation || "Administrator",
+      designation: finalDesignation,
       departmentId: firstDeptRef?.id ?? null,
+      photoUrl,
       role: "org_admin",
       status: "active",
       createdAt: FieldValue.serverTimestamp(),
     });
     await batch.commit();
+    // Only if it wasn't already in the seeded suggestion list.
+    await ensureDesignation(orgRef.id, finalDesignation);
+
+    // An org must launch with at least one workflow template — memos need
+    // somewhere to route to from day one.
+    await db().collection("templates").add({
+      orgId: orgRef.id,
+      name: workflowName,
+      description: null,
+      isActive: true,
+      createdBy: uid,
+      steps: workflowSteps.map((label, i) => ({ order: i + 1, label })),
+      createdAt: FieldValue.serverTimestamp(),
+    });
 
     await logAudit(orgRef.id, uid, "organization_created", "org", orgRef.id, orgName);
     await logAudit(orgRef.id, uid, "user_created", "user", uid, email);
@@ -142,6 +175,7 @@ const accountSchema = {
   email: z.string().trim().email(),
   password: z.string().min(8).max(72),
   designation: z.string().trim().max(120),
+  photoDataUrl: z.string().optional(),
 };
 
 const joinRequestSchema = z.object({
@@ -161,9 +195,15 @@ export async function joinableOrganizations() {
   return listJoinableOrgs();
 }
 
+// The chosen org's approved designation titles, so a joiner picks from the
+// same list an admin would see — not just a generic global suggestion set.
+export async function orgDesignations(orgId: string) {
+  return listActiveDesignationNames(orgId);
+}
+
 async function createMember(
   orgId: string,
-  input: { fullName: string; email: string; password: string; designation: string },
+  input: { fullName: string; email: string; password: string; designation: string; photoDataUrl?: string },
   status: "active" | "pending"
 ): Promise<{ error?: string }> {
   let uid: string;
@@ -190,6 +230,7 @@ async function createMember(
       email: input.email,
       designation: input.designation || null,
       departmentId: null,
+      photoUrl: validateImageDataUrl(input.photoDataUrl),
       role: "user", // never an administrator by self-service
       status,
       createdAt: FieldValue.serverTimestamp(),
@@ -198,6 +239,7 @@ async function createMember(
     await adminAuth().deleteUser(uid).catch(() => {});
     return { error: "Could not complete the request. Please try again." };
   }
+  if (input.designation) await ensureDesignation(orgId, input.designation);
 
   await logAudit(orgId, uid, "join_requested", "user", uid, input.email);
 
