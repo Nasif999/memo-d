@@ -512,18 +512,19 @@ export function LandingPage({
 
   return (
     <div
-      style={{
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        ["--font-serif" as any]: "var(--font-landing-serif), ui-serif, Georgia, serif",
-        ["--font-azeret" as any]: "var(--font-landing-mono), ui-monospace, monospace",
-        // Scopes Tailwind's `font-mono` utility (which reads --font-mono) to
-        // Azeret Mono for this subtree only, leaving the app's IBM Plex Mono
-        // untouched everywhere else.
-        ["--font-mono" as any]: "var(--font-landing-mono), ui-monospace, monospace",
-        background: "#E7E3DA",
-        color: "#1A1917",
-        fontFamily: "var(--font-landing-mono), ui-monospace, monospace",
-      }}
+      style={
+        {
+          "--font-serif": "var(--font-landing-serif), ui-serif, Georgia, serif",
+          "--font-azeret": "var(--font-landing-mono), ui-monospace, monospace",
+          // Scopes Tailwind's `font-mono` utility (which reads --font-mono) to
+          // Azeret Mono for this subtree only, leaving the app's IBM Plex Mono
+          // untouched everywhere else.
+          "--font-mono": "var(--font-landing-mono), ui-monospace, monospace",
+          background: "#E7E3DA",
+          color: "#1A1917",
+          fontFamily: "var(--font-landing-mono), ui-monospace, monospace",
+        } as React.CSSProperties
+      }
       className="min-h-screen"
     >
       {/* -------------------------------------------------- NAV */}
